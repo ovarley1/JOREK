@@ -22,7 +22,8 @@ module data_structure
   real*8     :: b_field(n_coord_tor,n_degrees,n_dim+1)  !< magnetic field  R, Z, phi components from GVEC
 #endif
 #ifndef USE_DOMM
-  real*8     :: chi_correction(n_coord_tor,n_degrees)   !< correction to the vacuum magnetic field
+  real*8     :: b_vac_field(n_coord_tor,n_degrees,n_dim+1)  !< vacuum magnetic field  R, Z, phi components from GVEC
+  real*8     :: chi_correction(n_coord_tor,n_degrees)       !< correction to the vacuum magnetic field
 #endif 
   real*8     :: j_source(n_tor,n_degrees)               !< Current source in a stellarator
 #elif fullmhd

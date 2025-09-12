@@ -1330,6 +1330,7 @@ end subroutine interp_RZP_2
 !!   3: pressure
 !!   4: radial coordinate (in GVEC, this is the square root of the normalised toroidal flux)
 !!   5: scalar potential for vacuum magnetic field
+!!   6: vacuum magnetic field imported with GVEC
 pure subroutine interp_gvec(node_list, element_list, i_elm, i_var, i_dim, i_harm, s, t, P, P_s, P_t, P_st, P_ss, P_tt)
 type (type_node_list),    intent(in)  :: node_list
 type (type_element_list), intent(in)  :: element_list
@@ -1394,6 +1395,13 @@ do kv = 1,n_vertex_max  ! 4 vertices
       P_st = P_st + node_list%node(iv)%chi_correction(i_harm,kf) * element_list%element(i_elm)%size(kv,kf) * G_st(kv,kf)
       P_ss = P_ss + node_list%node(iv)%chi_correction(i_harm,kf) * element_list%element(i_elm)%size(kv,kf) * G_ss(kv,kf)
       P_tt = P_tt + node_list%node(iv)%chi_correction(i_harm,kf) * element_list%element(i_elm)%size(kv,kf) * G_tt(kv,kf)
+    else if (i_var == 6) then
+      P    = P    + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G(kv,kf)
+      P_s  = P_s  + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G_s(kv,kf)
+      P_t  = P_t  + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G_t(kv,kf)
+      P_st = P_st + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G_st(kv,kf)
+      P_ss = P_ss + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G_ss(kv,kf)
+      P_tt = P_tt + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G_tt(kv,kf)
 #endif /*USE_DOMM*/
     endif
   end do
