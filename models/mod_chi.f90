@@ -243,8 +243,7 @@ module mod_chi
     
     get_chi = get_chi_domm(R,z,phi,max_ord)
 #ifndef USE_DOMM
-    ! get_chi = get_chi + get_chi_corr(node_list, element_list, i_elm, s, t, phi)
-    get_chi = get_chi_corr(node_list, element_list, i_elm, s, t, phi)
+    get_chi = get_chi + get_chi_corr(node_list, element_list, i_elm, s, t, phi)
 #endif
   endfunction get_chi
 
@@ -331,6 +330,7 @@ module mod_chi
 #else
     get_chi_domm(0,0,0) = phi; get_chi_domm(0,0,1) = 1
 #endif
+    get_chi_domm(0,0,1) = 0.d0
 
     get_chi_domm = F0*get_chi_domm
   end function get_chi_domm
@@ -355,12 +355,11 @@ module mod_chi
     ! real*8  :: chi_corr_px, chi_corr_py
     ! real*8  :: chi_x, chi_y, chi_p, chi_xx, chi_xy, chi_yy, chi_yp, chi_xp, chi_pp
     ! real*8  :: xjac, xjac_x, xjac_y, x_p_x, x_p_y, y_p_x, y_p_y
-    real*8, dimension(n_order) :: B, B_corr_s, B_corr_t, B_corr_p, B_x, B_y, B_p   
-    ! Index represents the direction of the field:  1: R, 2: Z, 3: phi
+    real*8, dimension(n_order) :: B, B_s, B_t, B_p_coord, B_x, B_y, B_p    ! Index represents the direction of the field:  1: R, 2: Z, 3: phi
     integer :: i_harm, i_tor, i_var, i_dim
     real*8  :: R, R_s, R_t, R_p, R_ss, R_tt, R_st, R_pp, R_sp, R_tp
     real*8  :: Z, Z_s, Z_t, Z_p, Z_ss, Z_tt, Z_st, Z_pp, Z_sp, Z_tp
-    real*8  :: B_corr_harm, B_corr_harm_s, B_corr_harm_t, B_corr_harm_st,B_corr_harm_ss,B_corr_harm_tt  !The second derivatives aren't used
+    real*8  :: B_harm, B_harm_s, B_harm_t, B_harm_st,B_harm_ss,B_harm_tt  ! The second derivatives aren't used
     real*8  :: xjac
     
     ! ! Get R, Z, phi geometry of point
@@ -458,50 +457,49 @@ module mod_chi
     ! get_chi_corr(1,0,1) = get_chi_corr(1,0,1) + chi_xp  ! BR_phi
     ! get_chi_corr(0,1,1) = get_chi_corr(0,1,1) + chi_yp  ! BZ_phi
 
-    
-    ! Get R, Z, phi geometry of point
+    ! Get R, Z, phi geometry of point.
     call interp_RZP(node_list,element_list,i_elm,s,t,phi,R,R_s,R_t,R_p,R_st,R_ss,R_tt,R_sp,R_tp,R_pp, &
                                                          Z,Z_s,Z_t,Z_p,Z_st,Z_ss,Z_tt,Z_sp,Z_tp,Z_pp)
     i_var = 6 ! This decides which variable to retrieve. In this case, 6 is for the vacuum field
     xjac =  R_s*Z_t - R_t*Z_s 
     do i_dim = 1,n_order
+      call interp_gvec(node_list,element_list,i_elm,i_var,i_dim,1,s,t,B(i_dim),B_s(i_dim),B_t(i_dim), &
+                                                                      B_harm_st,B_harm_ss,B_harm_tt)
+      B_p(i_dim) = 0.0
       do i_tor=1,(n_coord_tor-1)/2
         i_harm = 2*i_tor
-        call interp_gvec(node_list,element_list,i_elm,i_var,i_dim,i_harm,s,t,B_corr_harm, B_corr_harm_s, B_corr_harm_t, &
-                                                                             B_corr_harm_st,B_corr_harm_ss,B_corr_harm_tt)
-        B(i_dim)        = B(i_dim)        + B_corr_harm   * cos(mode_coord(i_harm)*phi)
-        B_corr_s(i_dim) = B_corr_s(i_dim) + B_corr_harm_s * cos(mode_coord(i_harm)*phi)
-        B_corr_t(i_dim) = B_corr_t(i_dim) + B_corr_harm_t * cos(mode_coord(i_harm)*phi)
-        B_corr_p(i_dim) = B_corr_p(i_dim) - B_corr_harm   * mode_coord(i_harm) * sin(mode_coord(i_harm)*phi)
+        call interp_gvec(node_list,element_list,i_elm,i_var,i_dim,i_harm,s,t,B_harm, B_harm_s, B_harm_t, &
+                                                                             B_harm_st,B_harm_ss,B_harm_tt)
+        B(i_dim)   = B(i_dim)   + B_harm   * cos(mode_coord(i_harm)*phi)
+        B_s(i_dim) = B_s(i_dim) + B_harm_s * cos(mode_coord(i_harm)*phi)
+        B_t(i_dim) = B_t(i_dim) + B_harm_t * cos(mode_coord(i_harm)*phi)
+        B_p(i_dim) = B_p(i_dim) - B_harm   * mode_coord(i_harm) * sin(mode_coord(i_harm)*phi)
 
-        call interp_gvec(node_list,element_list,i_elm,i_var,i_dim,i_harm+1,s,t,B_corr_harm, B_corr_harm_s, B_corr_harm_t, &
-                                                                               B_corr_harm_st,B_corr_harm_ss,B_corr_harm_tt)
-        B(i_dim)        = B(i_dim)        - B_corr_harm   * sin(mode_coord(i_harm)*phi)
-        B_corr_s(i_dim) = B_corr_s(i_dim) - B_corr_harm_s * sin(mode_coord(i_harm)*phi)
-        B_corr_t(i_dim) = B_corr_t(i_dim) - B_corr_harm_t * sin(mode_coord(i_harm)*phi)
-        B_corr_p(i_dim) = B_corr_p(i_dim) - B_corr_harm   * mode_coord(i_harm) * cos(mode_coord(i_harm)*phi)
+        call interp_gvec(node_list,element_list,i_elm,i_var,i_dim,i_harm+1,s,t,B_harm, B_harm_s, B_harm_t, &
+                                                                               B_harm_st,B_harm_ss,B_harm_tt)
+        B(i_dim)   = B(i_dim)   - B_harm   * sin(mode_coord(i_harm)*phi)
+        B_s(i_dim) = B_s(i_dim) - B_harm_s * sin(mode_coord(i_harm)*phi)
+        B_t(i_dim) = B_t(i_dim) - B_harm_t * sin(mode_coord(i_harm)*phi)
+        B_p(i_dim) = B_p(i_dim) - B_harm   * mode_coord(i_harm) * cos(mode_coord(i_harm)*phi)
       end do
 
       ! Calculate the R,Z,phi derivatives.
-      B_x(i_dim) = ( Z_t * B_corr_s(i_dim) - Z_s * B_corr_t(i_dim)) / xjac
-      B_y(i_dim) = (-R_t * B_corr_s(i_dim) + R_s * B_corr_t(i_dim)) / xjac
-      B_p(i_dim) = B_corr_p(i_dim) - B_x(i_dim) * R_p - B_y(i_dim) * Z_p
+      B_x(i_dim) = ( Z_t * B_s(i_dim) - Z_s * B_t(i_dim)) / xjac
+      B_y(i_dim) = (-R_t * B_s(i_dim) + R_s * B_t(i_dim)) / xjac
+      B_p(i_dim) = B_p(i_dim) - B_x(i_dim) * R_p - B_y(i_dim) * Z_p
     end do
 
     get_chi_corr        = 0.0
     get_chi_corr(0,0,0) = 0.0
-    get_chi_corr(1,0,0) = B(1)   ! BR
-    get_chi_corr(0,1,0) = B(2)   ! BZ
-    get_chi_corr(0,0,1) = B(3)   ! Bphi
-    get_chi_corr(2,0,0) = B_x(1) ! BR_R
-    get_chi_corr(0,2,0) = B_y(2) ! BZ_Z
-    get_chi_corr(0,0,2) = B_p(3) ! Bphi_phi
-    get_chi_corr(1,1,0) = B_y(1) ! BR_Z
-    get_chi_corr(1,0,1) = B_p(1) ! BR_phi
-    get_chi_corr(0,1,1) = B_p(3) ! Bz_phi
-
-    ! Just replace this with the correct things from the B_vac fields.
-    ! Be careful that gradB isn't massive.
+    get_chi_corr(1,0,0) = B(1)        ! chi_x = BR
+    get_chi_corr(0,1,0) = B(2)        ! chi_y = BZ
+    get_chi_corr(0,0,1) = B(3) * R    ! chi_p = R*Bp
+    get_chi_corr(2,0,0) = B_x(1)      ! chi_xx = BR_R
+    get_chi_corr(0,2,0) = B_y(2)      ! chi_yy = BZ_Z
+    get_chi_corr(0,0,2) = B_p(3) * R  ! chi_pp = R*Bp_p
+    get_chi_corr(1,1,0) = B_y(1)      ! chi_xy = BR_Z (?= BZ_R)
+    get_chi_corr(1,0,1) = B_p(1)      ! chi_xp = BR_p (?= Bp + R*Bp_R)
+    get_chi_corr(0,1,1) = B_p(3)      ! chi_zp = Bz_p (?= R*Bp_Z)
 
   end function get_chi_corr
 
