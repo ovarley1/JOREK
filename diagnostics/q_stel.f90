@@ -52,7 +52,6 @@ integer   :: status(MPI_STATUS_SIZE)
 real*8    :: rphin_arr(n_lines) = 0.d0, polturns_arr(n_lines) = 0.d0, torturns_arr(n_lines) = 0.d0, phi_arr(n_lines) = 0.d0, R_arr(n_lines) = 0.d0
 real*8    :: rphin_arr_tot(n_lines) = 0.d0, polturns_arr_tot(n_lines) = 0.0, torturns_arr_tot(n_lines) = 0.0, phi_arr_tot(n_lines) = 0.d0, R_arr_tot(n_lines) = 0.d0
 real*8    :: R_poinc_tot(n_lines*num_pol_turns*n_period*assumed_max_q) = 0.d0, Z_poinc_tot(n_lines*num_pol_turns*n_period*assumed_max_q), phi_poinc_tot(n_lines*num_pol_turns*n_period*assumed_max_q)
-real*8    :: bloating_factor = 1.8
 
 ! --- Initialise constants
 integer   :: v_s0_t0   = 1    ! the vertex and edge indices follow and anti-clockwise convention
