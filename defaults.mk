@@ -280,6 +280,12 @@ else
   $(warning "USE_HDF5=1 is recommended for input/output")
 endif
 
+ifeq (1, $(USE_NETCDF))
+  LIBS     := $(LIBS) $(NETCDFLIB)
+  INCLUDES := $(INCLUDES) -I$(NETCDFINCLUDE)
+  DEFINES  := $(DEFINES) -DUSE_NETCDF
+endif
+
 ifeq (1, $(USE_BLOCK))
   DEFINES := $(DEFINES) -DUSE_BLOCK
 endif
