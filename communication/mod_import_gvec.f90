@@ -546,7 +546,11 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
 
   ! Smooth axis points - GVEC axis points are shifted from s=0 for numerical stability. The points need to be averaged onto s=0
   do idx=1, n_coord_tor
+#ifdef USE_EXT_FIELD
     R_average=0.0; Z_average=0.0; BR_average=0.0; BZ_average=0.0; BvacR_average=0.0; BvacZ_average=0.0;
+#else
+    R_average=0.0; Z_average=0.0; BR_average=0.0; BZ_average=0.0;
+#endif /*USE_EXT_FIELD*/
     do i_node=1, n_tht
       R_average     = R_average   + node_list%node(i_node)%x(idx, 1, 1)
       Z_average     = Z_average   + node_list%node(i_node)%x(idx, 1, 2)
@@ -571,7 +575,7 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
       ! Not sure why this is commented out? I think it should be b_field(idx,1,2) for Z coordinate anyway.
       node_list%node(i_node)%b_field(idx, 3, 2) = 0.0
       node_list%node(i_node)%b_field(idx, 4, 2) = 0.0
-#ifndef USE_EXT_FIELD
+#ifdef USE_EXT_FIELD
       !node_list%node(i_node)%b_vac_field(idx, 1, 1) = BvacR_average  / n_tht
       node_list%node(i_node)%b_vac_field(idx, 3, 1) = 0.0
       node_list%node(i_node)%b_vac_field(idx, 4, 1) = 0.0

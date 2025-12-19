@@ -509,17 +509,17 @@ module mod_chi
       B_p(i_dim) = B_p(i_dim) - B_x(i_dim) * R_p - B_y(i_dim) * Z_p
     end do
 
-    get_chi_corr        = 0.0
-    get_chi_corr(0,0,0) = 0.0
-    get_chi_corr(1,0,0) = B(1)        ! chi_x = BR
-    get_chi_corr(0,1,0) = B(2)        ! chi_y = BZ
-    get_chi_corr(0,0,1) = B(3) * R    ! chi_p = R*Bp
-    get_chi_corr(2,0,0) = B_x(1)      ! chi_xx = BR_R
-    get_chi_corr(0,2,0) = B_y(2)      ! chi_yy = BZ_Z
-    get_chi_corr(0,0,2) = B_p(3) * R  ! chi_pp = R*Bp_p
-    get_chi_corr(1,1,0) = B_y(1)      ! chi_xy = BR_Z (?= BZ_R)
-    get_chi_corr(1,0,1) = B_p(1)      ! chi_xp = BR_p (?= Bp + R*Bp_R)
-    get_chi_corr(0,1,1) = B_p(3)      ! chi_zp = Bz_p (?= R*Bp_Z)
+    get_chi_corr_ext        = 0.0
+    get_chi_corr_ext(0,0,0) = 0.0
+    get_chi_corr_ext(1,0,0) = B(1)        ! chi_x = BR
+    get_chi_corr_ext(0,1,0) = B(2)        ! chi_y = BZ
+    get_chi_corr_ext(0,0,1) = B(3) * R    ! chi_p = R*Bp
+    get_chi_corr_ext(2,0,0) = B_x(1)      ! chi_xx = BR_R
+    get_chi_corr_ext(0,2,0) = B_y(2)      ! chi_yy = BZ_Z
+    get_chi_corr_ext(0,0,2) = B_p(3) * R  ! chi_pp = R*Bp_p
+    get_chi_corr_ext(1,1,0) = B_y(1)      ! chi_xy = BR_Z (?= BZ_R)
+    get_chi_corr_ext(1,0,1) = B_p(1)      ! chi_xp = BR_p (?= Bp + R*Bp_R)
+    get_chi_corr_ext(0,1,1) = B_p(3)      ! chi_zp = Bz_p (?= R*Bp_Z)
 
   end function get_chi_corr_ext
 
