@@ -243,7 +243,11 @@ module mod_chi
     
     get_chi = get_chi_domm(R,z,phi,max_ord)
 #ifndef USE_DOMM
+#ifndef USE_EXT_FIELD
     get_chi = get_chi + get_chi_corr(node_list, element_list, i_elm, s, t, phi)
+#else
+    get_chi = get_chi + get_chi_corr_ext(node_list, element_list, i_elm, s, t, phi)
+#endif
 #endif
   endfunction get_chi
 
@@ -330,7 +334,9 @@ module mod_chi
 #else
     get_chi_domm(0,0,0) = phi; get_chi_domm(0,0,1) = 1
 #endif
-    get_chi_domm(0,0,1) = 0.d0
+#ifdef USE_EXT_FIELD
+    get_chi_domm(0,0,1) = 0.d0  ! If using an external vacuum field, this toroidal field term is already included in the external field.
+#endif
 
     get_chi_domm = F0*get_chi_domm
   end function get_chi_domm
@@ -347,121 +353,135 @@ module mod_chi
     integer, intent(in) :: i_elm
     real*8,  intent(in) :: s, t, phi
     real*8, dimension(0:n_order-1,0:n_order-1,0:n_order-1) :: get_chi_corr
-    ! integer :: i_harm, i_tor
-    ! real*8  :: R, R_s, R_t, R_p, R_ss, R_tt, R_st, R_pp, R_sp, R_tp
-    ! real*8  :: Z, Z_s, Z_t, Z_p, Z_ss, Z_tt, Z_st, Z_pp, Z_sp, Z_tp
-    ! real*8  :: chi_corr, chi_corr_s, chi_corr_t, chi_corr_p, chi_corr_ss, chi_corr_tt, chi_corr_st, chi_corr_sp, chi_corr_tp, chi_corr_pp
-    ! real*8  :: chi_corr_harm, chi_corr_harm_s, chi_corr_harm_t, chi_corr_harm_ss, chi_corr_harm_tt, chi_corr_harm_st
-    ! real*8  :: chi_corr_px, chi_corr_py
-    ! real*8  :: chi_x, chi_y, chi_p, chi_xx, chi_xy, chi_yy, chi_yp, chi_xp, chi_pp
-    ! real*8  :: xjac, xjac_x, xjac_y, x_p_x, x_p_y, y_p_x, y_p_y
+    integer :: i_harm, i_tor
+    real*8  :: R, R_s, R_t, R_p, R_ss, R_tt, R_st, R_pp, R_sp, R_tp
+    real*8  :: Z, Z_s, Z_t, Z_p, Z_ss, Z_tt, Z_st, Z_pp, Z_sp, Z_tp
+    real*8  :: chi_corr, chi_corr_s, chi_corr_t, chi_corr_p, chi_corr_ss, chi_corr_tt, chi_corr_st, chi_corr_sp, chi_corr_tp, chi_corr_pp
+    real*8  :: chi_corr_harm, chi_corr_harm_s, chi_corr_harm_t, chi_corr_harm_ss, chi_corr_harm_tt, chi_corr_harm_st
+    real*8  :: chi_corr_px, chi_corr_py
+    real*8  :: chi_x, chi_y, chi_p, chi_xx, chi_xy, chi_yy, chi_yp, chi_xp, chi_pp
+    real*8  :: xjac, xjac_s, xjac_x, xjac_y, x_p_x, x_p_y, y_p_x, y_p_y
+    
+    ! Get R, Z, phi geometry of point
+    call interp_RZP(node_list,element_list,i_elm,s,t,phi,R,R_s,R_t,R_p,R_st,R_ss,R_tt,R_sp,R_tp,R_pp, &
+                                                         Z,Z_s,Z_t,Z_p,Z_st,Z_ss,Z_tt,Z_sp,Z_tp,Z_pp)
+    
+    ! Compute chi and s, t, phi derivatives
+    call interp_gvec(node_list,element_list,i_elm,5,1,1,s,t,chi_corr,chi_corr_s,chi_corr_t,chi_corr_st,chi_corr_ss,chi_corr_tt)
+    chi_corr_p = 0.0; chi_corr_sp = 0.0; chi_corr_tp = 0.0; chi_corr_pp = 0.0
+    do i_tor=1,(n_coord_tor-1)/2
+      i_harm = 2*i_tor
+      
+      call interp_gvec(node_list,element_list,i_elm,5,1,i_harm,s,t,chi_corr_harm, chi_corr_harm_s, chi_corr_harm_t, &
+                                                                   chi_corr_harm_st,chi_corr_harm_ss,chi_corr_harm_tt)
+      chi_corr     = chi_corr    + chi_corr_harm    * cos(mode_coord(i_harm)*phi)
+      chi_corr_s   = chi_corr_s  + chi_corr_harm_s  * cos(mode_coord(i_harm)*phi)
+      chi_corr_t   = chi_corr_t  + chi_corr_harm_t  * cos(mode_coord(i_harm)*phi)
+      chi_corr_st  = chi_corr_st + chi_corr_harm_st * cos(mode_coord(i_harm)*phi)
+      chi_corr_ss  = chi_corr_ss + chi_corr_harm_ss * cos(mode_coord(i_harm)*phi)
+      chi_corr_tt  = chi_corr_tt + chi_corr_harm_tt * cos(mode_coord(i_harm)*phi)
+      chi_corr_p   = chi_corr_p  - chi_corr_harm    * mode_coord(i_harm) * sin(mode_coord(i_harm)*phi)
+      chi_corr_sp  = chi_corr_sp - chi_corr_harm_s  * mode_coord(i_harm) * sin(mode_coord(i_harm)*phi)
+      chi_corr_tp  = chi_corr_tp - chi_corr_harm_t  * mode_coord(i_harm) * sin(mode_coord(i_harm)*phi)
+      chi_corr_pp  = chi_corr_pp - chi_corr_harm    * mode_coord(i_harm)**2 * cos(mode_coord(i_harm)*phi)
+      
+      call interp_gvec(node_list,element_list,i_elm,5,1,i_harm+1,s,t,chi_corr_harm, chi_corr_harm_s, chi_corr_harm_t,  &
+                                                                     chi_corr_harm_st,chi_corr_harm_ss,chi_corr_harm_tt)
+      chi_corr     = chi_corr    - chi_corr_harm    * sin(mode_coord(i_harm)*phi)
+      chi_corr_s   = chi_corr_s  - chi_corr_harm_s  * sin(mode_coord(i_harm)*phi)
+      chi_corr_t   = chi_corr_t  - chi_corr_harm_t  * sin(mode_coord(i_harm)*phi)
+      chi_corr_st  = chi_corr_st - chi_corr_harm_st * sin(mode_coord(i_harm)*phi)
+      chi_corr_ss  = chi_corr_ss - chi_corr_harm_ss * sin(mode_coord(i_harm)*phi)
+      chi_corr_tt  = chi_corr_tt - chi_corr_harm_tt * sin(mode_coord(i_harm)*phi)
+      chi_corr_p   = chi_corr_p  - chi_corr_harm    * mode_coord(i_harm) * cos(mode_coord(i_harm)*phi)
+      chi_corr_sp  = chi_corr_sp - chi_corr_harm_s  * mode_coord(i_harm) * cos(mode_coord(i_harm)*phi)
+      chi_corr_tp  = chi_corr_tp - chi_corr_harm_t  * mode_coord(i_harm) * cos(mode_coord(i_harm)*phi)
+      chi_corr_pp  = chi_corr_pp + chi_corr_harm    * mode_coord(i_harm)**2 * sin(mode_coord(i_harm)*phi)
+    end do
+
+    ! Compute chi and R, Z, phi derivatives
+    xjac =  R_s*Z_t - R_t*Z_s
+    ! Use L'Hopital's rule (differentiate numerator and denominator wrt s) if the derivatives are being evaluated on the axis
+    if (i_elm .le. n_tht .and. s .eq. 0.d0) then
+      xjac_s = R_s*Z_st - R_st*Z_s
+      chi_x = ( Z_st*chi_corr_s - Z_s*chi_corr_st)/xjac_s
+      chi_y = (-R_st*chi_corr_s + R_s*chi_corr_st)/xjac_s
+    else ! If not, then we use the standard expressions for chi_x and chi_y
+      chi_x = (   Z_t * chi_corr_s - Z_s * chi_corr_t ) / xjac
+      chi_y = ( - R_t * chi_corr_s + R_s * chi_corr_t ) / xjac
+    end if
+    chi_p = chi_corr_p - chi_x * R_p - chi_y * Z_p
+
+    xjac_x  = (R_ss*Z_t**2 - Z_ss*R_t*Z_t - 2.d0*R_st*Z_s*Z_t &
+            + Z_st*(R_s*Z_t + R_t*Z_s)                                                      &
+            + R_tt*Z_s**2 - Z_tt*R_s*Z_s) / xjac
+    xjac_y  = (Z_tt*R_s**2 - R_tt*Z_s*R_s - 2.d0*Z_st*R_t*R_s &
+            + R_st*(Z_t*R_s + Z_s*R_t)                                                      &
+            + Z_ss*R_t**2 - R_ss*Z_t*R_t) / xjac
+    x_p_x = (R_sp*Z_t - R_tp*Z_s)/xjac
+    x_p_y = (R_tp*R_s - R_sp*R_t)/xjac
+    y_p_x = (Z_sp*Z_t - Z_tp*Z_s)/xjac
+    y_p_y = (Z_tp*R_s - Z_sp*R_t)/xjac
+    chi_xx              = (chi_corr_ss*Z_t**2 - 2.d0*chi_corr_st*Z_s*Z_t &
+                        + chi_corr_tt*Z_s**2                                                       &
+                        + chi_corr_s*(Z_st*Z_t - Z_tt*Z_s)           &
+                        + chi_corr_t*(Z_st*Z_s - Z_ss*Z_t))/xjac**2  &
+                        - xjac_x*(chi_corr_s*Z_t - chi_corr_t*Z_s)/xjac**2
+    chi_yy              = (chi_corr_ss*R_t**2 - 2.d0*chi_corr_st*R_s*R_t &
+                        + chi_corr_tt*R_s**2                                                       &
+                        + chi_corr_s*(R_st*R_t - R_tt*R_s)           &
+                        + chi_corr_t*(R_st*R_s - R_ss*R_t))/xjac**2  &
+                        - xjac_y*(-chi_corr_s*R_t + chi_corr_t*R_s)/xjac**2
+    chi_xy              = (-chi_corr_ss*Z_t*R_t - chi_corr_tt*R_s*Z_s &
+                        + chi_corr_st*(Z_s*R_t + Z_t*R_s)                   &
+                        - chi_corr_s*(R_st*Z_t - R_tt*Z_s)                  &
+                        - chi_corr_t*(R_st*Z_s - R_ss*Z_t))/xjac**2         &
+                        - xjac_x*(-chi_corr_s*R_t + chi_corr_t*R_s)/xjac**2
+    chi_corr_px               = (Z_t*chi_corr_sp - Z_s*chi_corr_tp)/xjac
+    chi_corr_py               = (-R_t*chi_corr_sp + R_s*chi_corr_tp)/xjac
+    chi_pp              = chi_corr_pp - R_pp*chi_x - 2.d0*(R_p*chi_corr_px + Z_p*chi_corr_py)            &
+                         - Z_pp*chi_y + (R_p*x_p_x*chi_x + R_p*y_p_x*chi_y&
+                         + Z_p*x_p_y*chi_x + Z_p*y_p_y*chi_y) + R_p**2*chi_xx   &
+                         + 2.d0*R_p*Z_p*chi_xy + Z_p**2*chi_yy
+    chi_xp              = chi_corr_px - x_p_x*chi_x - R_p*chi_xx - y_p_x*chi_y - Z_p*chi_xy
+    chi_yp              = chi_corr_py - x_p_y*chi_x - R_p*chi_xy - y_p_y*chi_y - Z_p*chi_yy
+    
+    get_chi_corr        = 0.0
+    get_chi_corr(0,0,0) = get_chi_corr(0,0,0) + chi_corr
+    get_chi_corr(1,0,0) = get_chi_corr(1,0,0) + chi_x   ! BR
+    get_chi_corr(0,1,0) = get_chi_corr(0,1,0) + chi_y   ! BZ
+    get_chi_corr(0,0,1) = get_chi_corr(0,0,1) + chi_p   ! Bphi
+    get_chi_corr(2,0,0) = get_chi_corr(2,0,0) + chi_xx  ! BR_R
+    get_chi_corr(0,2,0) = get_chi_corr(0,2,0) + chi_yy  ! BZ_Z
+    get_chi_corr(0,0,2) = get_chi_corr(0,0,2) + chi_pp  ! Bphi_phi
+    get_chi_corr(1,1,0) = get_chi_corr(1,1,0) + chi_xy  ! BR_Z = BZ_R
+    get_chi_corr(1,0,1) = get_chi_corr(1,0,1) + chi_xp  ! BR_phi = Bphi_R
+    get_chi_corr(0,1,1) = get_chi_corr(0,1,1) + chi_yp  ! BZ_phi = Bphi_Z
+  end function get_chi_corr
+
+  !>  This function returns the external vacuum magnetic field from the values provided in the gvec2jorek file.
+  pure function get_chi_corr_ext(node_list, element_list, i_elm, s, t, phi)
+    use phys_module,        only: mode_coord, n_tht
+    use data_structure,     only: type_node_list, type_element_list
+    use mod_interp,         only: interp_RZP, interp_gvec
+    implicit none
+    type (type_node_list),    intent(in)  :: node_list
+    type (type_element_list), intent(in)  :: element_list
+    integer, intent(in) :: i_elm
+    real*8,  intent(in) :: s, t, phi
+    real*8, dimension(0:n_order-1,0:n_order-1,0:n_order-1) :: get_chi_corr_ext
     real*8, dimension(n_order) :: B, B_s, B_t, B_p_coord, B_x, B_y, B_p    ! Index represents the direction of the field:  1: R, 2: Z, 3: phi
     integer :: i_harm, i_tor, i_var, i_dim
     real*8  :: R, R_s, R_t, R_p, R_ss, R_tt, R_st, R_pp, R_sp, R_tp
     real*8  :: Z, Z_s, Z_t, Z_p, Z_ss, Z_tt, Z_st, Z_pp, Z_sp, Z_tp
     real*8  :: B_harm, B_harm_s, B_harm_t, B_harm_st,B_harm_ss,B_harm_tt  ! The second derivatives aren't used
     real*8  :: xjac
-    
-    ! ! Get R, Z, phi geometry of point
-    ! call interp_RZP(node_list,element_list,i_elm,s,t,phi,R,R_s,R_t,R_p,R_st,R_ss,R_tt,R_sp,R_tp,R_pp, &
-    !                                                      Z,Z_s,Z_t,Z_p,Z_st,Z_ss,Z_tt,Z_sp,Z_tp,Z_pp)
-    
-    ! ! Compute chi and s, t, phi derivatives
-    ! call interp_gvec(node_list,element_list,i_elm,5,1,1,s,t,chi_corr,chi_corr_s,chi_corr_t,chi_corr_st,chi_corr_ss,chi_corr_tt)
-    ! chi_corr_p = 0.0; chi_corr_sp = 0.0; chi_corr_tp = 0.0; chi_corr_pp = 0.0
-    ! do i_tor=1,(n_coord_tor-1)/2
-    !   i_harm = 2*i_tor
-      
-    !   call interp_gvec(node_list,element_list,i_elm,5,1,i_harm,s,t,chi_corr_harm, chi_corr_harm_s, chi_corr_harm_t, &
-    !                                                                chi_corr_harm_st,chi_corr_harm_ss,chi_corr_harm_tt)
-    !   chi_corr     = chi_corr    + chi_corr_harm    * cos(mode_coord(i_harm)*phi)
-    !   chi_corr_s   = chi_corr_s  + chi_corr_harm_s  * cos(mode_coord(i_harm)*phi)
-    !   chi_corr_t   = chi_corr_t  + chi_corr_harm_t  * cos(mode_coord(i_harm)*phi)
-    !   chi_corr_st  = chi_corr_st + chi_corr_harm_st * cos(mode_coord(i_harm)*phi)
-    !   chi_corr_ss  = chi_corr_ss + chi_corr_harm_ss * cos(mode_coord(i_harm)*phi)
-    !   chi_corr_tt  = chi_corr_tt + chi_corr_harm_tt * cos(mode_coord(i_harm)*phi)
-    !   chi_corr_p   = chi_corr_p  - chi_corr_harm    * mode_coord(i_harm) * sin(mode_coord(i_harm)*phi)
-    !   chi_corr_sp  = chi_corr_sp - chi_corr_harm_s  * mode_coord(i_harm) * sin(mode_coord(i_harm)*phi)
-    !   chi_corr_tp  = chi_corr_tp - chi_corr_harm_t  * mode_coord(i_harm) * sin(mode_coord(i_harm)*phi)
-    !   chi_corr_pp  = chi_corr_pp - chi_corr_harm    * mode_coord(i_harm)**2 * cos(mode_coord(i_harm)*phi)
-      
-    !   call interp_gvec(node_list,element_list,i_elm,5,1,i_harm+1,s,t,chi_corr_harm, chi_corr_harm_s, chi_corr_harm_t,  &
-    !                                                                  chi_corr_harm_st,chi_corr_harm_ss,chi_corr_harm_tt)
-    !   chi_corr     = chi_corr    - chi_corr_harm    * sin(mode_coord(i_harm)*phi)
-    !   chi_corr_s   = chi_corr_s  - chi_corr_harm_s  * sin(mode_coord(i_harm)*phi)
-    !   chi_corr_t   = chi_corr_t  - chi_corr_harm_t  * sin(mode_coord(i_harm)*phi)
-    !   chi_corr_st  = chi_corr_st - chi_corr_harm_st * sin(mode_coord(i_harm)*phi)
-    !   chi_corr_ss  = chi_corr_ss - chi_corr_harm_ss * sin(mode_coord(i_harm)*phi)
-    !   chi_corr_tt  = chi_corr_tt - chi_corr_harm_tt * sin(mode_coord(i_harm)*phi)
-    !   chi_corr_p   = chi_corr_p  - chi_corr_harm    * mode_coord(i_harm) * cos(mode_coord(i_harm)*phi)
-    !   chi_corr_sp  = chi_corr_sp - chi_corr_harm_s  * mode_coord(i_harm) * cos(mode_coord(i_harm)*phi)
-    !   chi_corr_tp  = chi_corr_tp - chi_corr_harm_t  * mode_coord(i_harm) * cos(mode_coord(i_harm)*phi)
-    !   chi_corr_pp  = chi_corr_pp + chi_corr_harm    * mode_coord(i_harm)**2 * sin(mode_coord(i_harm)*phi)
-    ! end do
-
-    ! ! Compute chi and R, Z, phi derivatives
-    ! xjac =  R_s*Z_t - R_t*Z_s
-    ! ! Use L'Hopital's rule (differentiate numerator and denominator wrt s) if the derivatives are being evaluated on the axis
-    ! if (i_elm .le. n_tht .and. s .eq. 0.d0) then
-    !   xjac_s = R_s*Z_st - R_st*Z_s
-    !   chi_x = ( Z_st*chi_corr_s - Z_s*chi_corr_st)/xjac_s
-    !   chi_y = (-R_st*chi_corr_s + R_s*chi_corr_st)/xjac_s
-    ! else ! If not, then we use the standard expressions for chi_x and chi_y
-    !   chi_x = (   Z_t * chi_corr_s - Z_s * chi_corr_t ) / xjac
-    !   chi_y = ( - R_t * chi_corr_s + R_s * chi_corr_t ) / xjac
-    ! end if
-
-    ! xjac_x  = (R_ss*Z_t**2 - Z_ss*R_t*Z_t - 2.d0*R_st*Z_s*Z_t &
-    !         + Z_st*(R_s*Z_t + R_t*Z_s)                                                      &
-    !         + R_tt*Z_s**2 - Z_tt*R_s*Z_s) / xjac
-    ! xjac_y  = (Z_tt*R_s**2 - R_tt*Z_s*R_s - 2.d0*Z_st*R_t*R_s &
-    !         + R_st*(Z_t*R_s + Z_s*R_t)                                                      &
-    !         + Z_ss*R_t**2 - R_ss*Z_t*R_t) / xjac
-    ! x_p_x = (R_sp*Z_t - R_tp*Z_s)/xjac
-    ! x_p_y = (R_tp*R_s - R_sp*R_t)/xjac
-    ! y_p_x = (Z_sp*Z_t - Z_tp*Z_s)/xjac
-    ! y_p_y = (Z_tp*R_s - Z_sp*R_t)/xjac
-    ! chi_xx              = (chi_corr_ss*Z_t**2 - 2.d0*chi_corr_st*Z_s*Z_t &
-    !                     + chi_corr_tt*Z_s**2                                                       &
-    !                     + chi_corr_s*(Z_st*Z_t - Z_tt*Z_s)           &
-    !                     + chi_corr_t*(Z_st*Z_s - Z_ss*Z_t))/xjac**2  &
-    !                     - xjac_x*(chi_corr_s*Z_t - chi_corr_t*Z_s)/xjac**2
-    ! chi_yy              = (chi_corr_ss*R_t**2 - 2.d0*chi_corr_st*R_s*R_t &
-    !                     + chi_corr_tt*R_s**2                                                       &
-    !                     + chi_corr_s*(R_st*R_t - R_tt*R_s)           &
-    !                     + chi_corr_t*(R_st*R_s - R_ss*R_t))/xjac**2  &
-    !                     - xjac_y*(-chi_corr_s*R_t + chi_corr_t*R_s)/xjac**2
-    ! chi_xy              = (-chi_corr_ss*Z_t*R_t - chi_corr_tt*R_s*Z_s &
-    !                     + chi_corr_st*(Z_s*R_t + Z_t*R_s)                   &
-    !                     - chi_corr_s*(R_st*Z_t - R_tt*Z_s)                  &
-    !                     - chi_corr_t*(R_st*Z_s - R_ss*Z_t))/xjac**2         &
-    !                     - xjac_x*(-chi_corr_s*R_t + chi_corr_t*R_s)/xjac**2
-    ! chi_corr_px               = (Z_t*chi_corr_sp - Z_s*chi_corr_tp)/xjac
-    ! chi_corr_py               = (-R_t*chi_corr_sp + R_s*chi_corr_tp)/xjac
-    ! chi_pp              = chi_corr_pp - R_pp*chi_x - 2.d0*(R_p*chi_corr_px + Z_p*chi_corr_py)            &
-    !                      - Z_pp*chi_y + (R_p*x_p_x*chi_x + R_p*y_p_x*chi_y&
-    !                      + Z_p*x_p_y*chi_x + Z_p*y_p_y*chi_y) + R_p**2*chi_xx   &
-    !                      + 2.d0*R_p*Z_p*chi_xy + Z_p**2*chi_yy
-    ! chi_xp              = chi_corr_px - x_p_x*chi_x - R_p*chi_xx - y_p_x*chi_y - Z_p*chi_xy
-    ! chi_yp              = chi_corr_py - x_p_y*chi_x - R_p*chi_xy - y_p_y*chi_y - Z_p*chi_yy
-    
-    ! get_chi_corr        = 0.0
-    ! get_chi_corr(0,0,0) = get_chi_corr(0,0,0) + chi_corr
-    ! get_chi_corr(1,0,0) = get_chi_corr(1,0,0) + chi_x   ! BR
-    ! get_chi_corr(0,1,0) = get_chi_corr(0,1,0) + chi_y   ! BZ
-    ! get_chi_corr(0,0,1) = get_chi_corr(0,0,1) + chi_p   ! Bphi
-    ! get_chi_corr(2,0,0) = get_chi_corr(2,0,0) + chi_xx  ! BR_R
-    ! get_chi_corr(0,2,0) = get_chi_corr(0,2,0) + chi_yy  ! BZ_Z
-    ! get_chi_corr(0,0,2) = get_chi_corr(0,0,2) + chi_pp  ! Bphi_phi
-    ! get_chi_corr(1,1,0) = get_chi_corr(1,1,0) + chi_xy  ! BR_Z
-    ! get_chi_corr(1,0,1) = get_chi_corr(1,0,1) + chi_xp  ! BR_phi
-    ! get_chi_corr(0,1,1) = get_chi_corr(0,1,1) + chi_yp  ! BZ_phi
 
     ! Get R, Z, phi geometry of point.
     call interp_RZP(node_list,element_list,i_elm,s,t,phi,R,R_s,R_t,R_p,R_st,R_ss,R_tt,R_sp,R_tp,R_pp, &
                                                          Z,Z_s,Z_t,Z_p,Z_st,Z_ss,Z_tt,Z_sp,Z_tp,Z_pp)
     i_var = 6 ! This decides which variable to retrieve. In this case, 6 is for the vacuum field
-    xjac =  R_s*Z_t - R_t*Z_s 
+    xjac =  R_s*Z_t - R_t*Z_s
     do i_dim = 1,n_order
       call interp_gvec(node_list,element_list,i_elm,i_var,i_dim,1,s,t,B(i_dim),B_s(i_dim),B_t(i_dim), &
                                                                       B_harm_st,B_harm_ss,B_harm_tt)
@@ -501,7 +521,7 @@ module mod_chi
     get_chi_corr(1,0,1) = B_p(1)      ! chi_xp = BR_p (?= Bp + R*Bp_R)
     get_chi_corr(0,1,1) = B_p(3)      ! chi_zp = Bz_p (?= R*Bp_Z)
 
-  end function get_chi_corr
+  end function get_chi_corr_ext
 
   !>---------------------------
   !! Factorial of n

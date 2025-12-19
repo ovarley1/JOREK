@@ -502,8 +502,11 @@ subroutine export_hdf5_restart(node_list,element_list,filename,aux_node_list)
      t_b_field(i,:,:,:)        = node_list%node(i)%b_field
 #endif
 #ifndef USE_DOMM
+#ifdef USE_EXT_FIELD
      t_b_vac_field(i,:,:,:)    = node_list%node(i)%b_vac_field
+#else
      t_chi_correction(i,:,:)   = node_list%node(i)%chi_correction
+#endif
 #endif
      t_j_source(i,:,:)         = node_list%node(i)%j_source
 #endif
@@ -648,10 +651,13 @@ subroutine export_hdf5_restart(node_list,element_list,filename,aux_node_list)
 #endif
 
 #ifndef USE_DOMM
+#ifdef USE_EXT_FIELD
   call HDF5_array4D_saving(file_id,t_b_vac_field, &
        node_list%n_nodes,n_coord_tor,n_degrees,n_dim+1,'b_vac_field'//char(0))
+#else
   call HDF5_array3D_saving(file_id,t_chi_correction, &
        node_list%n_nodes,n_coord_tor,n_degrees,'chi_correction'//char(0))
+#endif
 #endif
   call HDF5_array3D_saving(file_id,t_j_source, &
        node_list%n_nodes,n_tor,n_degrees,'j_source'//char(0))

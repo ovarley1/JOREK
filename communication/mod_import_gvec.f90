@@ -52,9 +52,11 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
   real, allocatable        :: J_R_four(:, :, :), J_R_four_s(:, :, :), J_R_four_t(:, :, :), J_R_four_st(:, :, :)         ! Arrays for node J_R in fourier representation (i_theta, i_rad, i_four)
   real, allocatable        :: J_Z_four(:, :, :), J_Z_four_s(:, :, :), J_Z_four_t(:, :, :), J_Z_four_st(:, :, :)         ! Arrays for node J_Z in fourier representation (i_theta, i_rad, i_four)
   real, allocatable        :: J_phi_four(:, :, :), J_phi_four_s(:, :, :), J_phi_four_t(:, :, :), J_phi_four_st(:, :, :) ! Arrays for node J_phi in fourier representation (i_theta, i_rad, i_four)
+#ifdef USE_EXT_FIELD
   real, allocatable        :: B_vac_R_four(:, :, :), B_vac_R_four_s(:, :, :), B_vac_R_four_t(:, :, :), B_vac_R_four_st(:, :, :)         ! Arrays for node B_vac_R in fourier representation (i_theta, i_rad, i_four)
   real, allocatable        :: B_vac_Z_four(:, :, :), B_vac_Z_four_s(:, :, :), B_vac_Z_four_t(:, :, :), B_vac_Z_four_st(:, :, :)         ! Arrays for node B_vac_Z in fourier representation (i_theta, i_rad, i_four)
   real, allocatable        :: B_vac_phi_four(:, :, :), B_vac_phi_four_s(:, :, :), B_vac_phi_four_t(:, :, :), B_vac_phi_four_st(:, :, :) ! Arrays for node B_vac_phi in fourier representation (i_theta, i_rad, i_four)
+#endif
 
   ! JOREK grid
   integer          :: n_index_start, n_element_start, n_node_start
@@ -69,7 +71,9 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
   real*8           :: R_average, Z_average
   real*8           :: BR_average, BZ_average, Bphi_average
   real*8           :: JR_average, JZ_average, Jphi_average
+#ifdef USE_EXT_FIELD
   real*8           :: BvacR_average, BvacZ_average, Bvacphi_average
+#endif
 
   integer          :: in_gvec=11                          ! Input stream from gvec
   integer          :: iostatus=0                          ! Error flag for reading vacuum field
@@ -164,6 +168,7 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
   call tr_allocate(J_phi_four_s, 1, n_theta, 1, n_rad, 1, n_modes,    "J_phi_four_s", CAT_GRID)
   call tr_allocate(J_phi_four_t, 1, n_theta, 1, n_rad, 1, n_modes,    "J_phi_four_t", CAT_GRID)
   call tr_allocate(J_phi_four_st, 1, n_theta, 1, n_rad, 1, n_modes,   "J_phi_four_st", CAT_GRID)
+#ifdef USE_EXT_FIELD
   call tr_allocate(B_vac_R_four, 1, n_theta, 1, n_rad, 1, n_modes,        "B_vac_R_four", CAT_GRID)
   call tr_allocate(B_vac_R_four_s, 1, n_theta, 1, n_rad, 1, n_modes,      "B_vac_R_four_s", CAT_GRID)
   call tr_allocate(B_vac_R_four_t, 1, n_theta, 1, n_rad, 1, n_modes,      "B_vac_R_four_t", CAT_GRID)
@@ -176,6 +181,7 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
   call tr_allocate(B_vac_phi_four_s, 1, n_theta, 1, n_rad, 1, n_modes,    "B_vac_phi_four_s", CAT_GRID)
   call tr_allocate(B_vac_phi_four_t, 1, n_theta, 1, n_rad, 1, n_modes,    "B_vac_phi_four_t", CAT_GRID)
   call tr_allocate(B_vac_phi_four_st, 1, n_theta, 1, n_rad, 1, n_modes,   "B_vac_phi_four_st", CAT_GRID)
+#endif /*USE_EXT_FIELD*/
   read(in_gvec, '(A)')
   read(in_gvec,'(*(6(e23.15,:,1X),/))') R_four
   read(in_gvec, '(A)')
@@ -282,6 +288,7 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
   read(in_gvec,'(*(6(e23.15,:,1X),/))') J_phi_four_st
   
   ! B_vac profiles
+#ifdef USE_EXT_FIELD
   read(in_gvec, '(A)')
   read(in_gvec,'(*(6(e23.15,:,1X),/))') B_vac_R_four
   read(in_gvec, '(A)')
@@ -306,6 +313,7 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
   read(in_gvec,'(*(6(e23.15,:,1X),/))') B_vac_phi_four_t
   read(in_gvec, '(A)')
   read(in_gvec,'(*(6(e23.15,:,1X),/))') B_vac_phi_four_st
+#endif /*USE_EXT_FIELD*/
   close(in_gvec)
 
   ! Zero element and node variables
@@ -421,7 +429,7 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
         node_list%node(i_node)%j_field(itor, 3, 3) = J_phi_four_t(i_theta, i_rad, idx) * theta_factor * 1.0 / 3.0
         node_list%node(i_node)%j_field(itor, 4, 3) = J_phi_four_st(i_theta, i_rad, idx) * s_factor * theta_factor * 1.0 / 9.0
 
-#ifndef USE_DOMM    
+#ifdef USE_EXT_FIELD
         ! Read vacuum B field R, Z, phi components
         node_list%node(i_node)%b_vac_field(itor, 1, 1) = B_vac_R_four(i_theta, i_rad, idx)
         node_list%node(i_node)%b_vac_field(itor, 2, 1) = B_vac_R_four_s(i_theta, i_rad, idx) * s_factor * 1.0 / 3.0
@@ -435,7 +443,7 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
         node_list%node(i_node)%b_vac_field(itor, 2, 3) = B_vac_phi_four_s(i_theta, i_rad, idx) * s_factor * 1.0 / 3.0
         node_list%node(i_node)%b_vac_field(itor, 3, 3) = B_vac_phi_four_t(i_theta, i_rad, idx) * theta_factor * 1.0 / 3.0
         node_list%node(i_node)%b_vac_field(itor, 4, 3) = B_vac_phi_four_st(i_theta, i_rad, idx) * s_factor * theta_factor * 1.0 / 9.0
-#endif /*USE_DOMM*/
+#endif /*USE_EXT_FIELD*/
       enddo
       
       ! Determine if node is on the boundary
@@ -544,10 +552,10 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
       Z_average     = Z_average   + node_list%node(i_node)%x(idx, 1, 2)
       BR_average    = BR_average  + node_list%node(i_node)%b_field(idx, 1, 1)
       BZ_average    = BZ_average  + node_list%node(i_node)%b_field(idx, 1, 2)
-#ifndef USE_DOMM
+#ifdef USE_EXT_FIELD
       BvacR_average = BvacR_average  + node_list%node(i_node)%b_vac_field(idx, 1, 1)
       BvacZ_average = BvacZ_average  + node_list%node(i_node)%b_vac_field(idx, 1, 2)
-#endif /*USE_DOMM*/
+#endif /*USE_EXT_FIELD*/
     enddo
     do i_node=1, n_tht
       node_list%node(i_node)%x(idx, 1, 1) = R_average   / n_tht
@@ -563,14 +571,14 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
       ! Not sure why this is commented out? I think it should be b_field(idx,1,2) for Z coordinate anyway.
       node_list%node(i_node)%b_field(idx, 3, 2) = 0.0
       node_list%node(i_node)%b_field(idx, 4, 2) = 0.0
-#ifndef USE_DOMM
+#ifndef USE_EXT_FIELD
       !node_list%node(i_node)%b_vac_field(idx, 1, 1) = BvacR_average  / n_tht
       node_list%node(i_node)%b_vac_field(idx, 3, 1) = 0.0
       node_list%node(i_node)%b_vac_field(idx, 4, 1) = 0.0
-      !node_list%node(i_node)%b_vac_field(idx, 1, 1) = BvacZ_average  / n_tht
+      !node_list%node(i_node)%b_vac_field(idx, 1, 2) = BvacZ_average  / n_tht
       node_list%node(i_node)%b_vac_field(idx, 3, 2) = 0.0
       node_list%node(i_node)%b_vac_field(idx, 4, 2) = 0.0
-#endif /*USE_DOMM*/
+#endif /*USE_EXT_FIELD*/
     enddo
   enddo
 
@@ -607,6 +615,7 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
   call tr_deallocate(B_Phi_four_s,    "J_Phi_four_s", CAT_GRID)
   call tr_deallocate(B_Phi_four_t,    "J_Phi_four_t", CAT_GRID)
   call tr_deallocate(B_Phi_four_st,   "J_Phi_four_st", CAT_GRID)
+#ifdef USE_EXT_FIELD
   call tr_deallocate(B_vac_R_four,        "B_vac_R_four", CAT_GRID)
   call tr_deallocate(B_vac_R_four_s,      "B_vac_R_four_s", CAT_GRID)
   call tr_deallocate(B_vac_R_four_t,      "B_vac_R_four_t", CAT_GRID)
@@ -619,7 +628,8 @@ subroutine read_gvec_import(node_list, element_list, file_name, is_test, ierr)
   call tr_deallocate(B_vac_Phi_four_s,    "B_vac_Phi_four_s", CAT_GRID)
   call tr_deallocate(B_vac_Phi_four_t,    "B_vac_Phi_four_t", CAT_GRID)
   call tr_deallocate(B_vac_Phi_four_st,   "B_vac_Phi_four_st", CAT_GRID)
-#endif
+#endif /*USE_EXT_FIELD*/
+#endif /*jorek_180*/
 
 end subroutine read_gvec_import
 

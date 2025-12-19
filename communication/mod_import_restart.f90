@@ -1258,8 +1258,11 @@ subroutine import_hdf5_restart(node_list, element_list, filename, format_rst, er
   endif
 
 #ifndef USE_DOMM
+#ifdef USE_EXT_FIELD
   call HDF5_array4D_reading(file_id,t_b_vac_field,   'b_vac_field')
+#else
   call HDF5_array3D_reading(file_id,t_chi_correction, 'chi_correction')
+#endif
 #endif
 
   call HDF5_array3D_reading(file_id,t_j_source, 'j_source')
@@ -1356,8 +1359,11 @@ subroutine import_hdf5_restart(node_list, element_list, filename, format_rst, er
     node_list%node(i)%j_field  = t_j_field(i,:,:,:)
 #endif
 #ifndef USE_DOMM
+#ifdef USE_EXT_FIELD
     node_list%node(i)%b_vac_field     = t_b_vac_field(i,:,:,:)
+#else
     node_list%node(i)%chi_correction  = t_chi_correction(i,:,:)
+#endif
 #endif
     node_list%node(i)%j_source = 0.d0 
     do m=1,n_tor_tmp,2

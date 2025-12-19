@@ -1387,7 +1387,7 @@ do kv = 1,n_vertex_max  ! 4 vertices
       P_tt = P_tt + node_list%node(iv)%pressure(kf) * element_list%element(i_elm)%size(kv,kf) * G_tt(kv,kf)
 #endif /*JOREK_MODEL == 180*/
     else if (i_var == 5) then    
-#ifndef USE_DOMM    
+#if !defined(USE_DOMM) && !defined(USE_EXT_FIELD)
       ! The equilibrium is a scalar, axisymmetric profile, so i_dim and i_harm have no influence on the results
       P    = P    + node_list%node(iv)%chi_correction(i_harm,kf) * element_list%element(i_elm)%size(kv,kf) * G(kv,kf)
       P_s  = P_s  + node_list%node(iv)%chi_correction(i_harm,kf) * element_list%element(i_elm)%size(kv,kf) * G_s(kv,kf)
@@ -1395,14 +1395,16 @@ do kv = 1,n_vertex_max  ! 4 vertices
       P_st = P_st + node_list%node(iv)%chi_correction(i_harm,kf) * element_list%element(i_elm)%size(kv,kf) * G_st(kv,kf)
       P_ss = P_ss + node_list%node(iv)%chi_correction(i_harm,kf) * element_list%element(i_elm)%size(kv,kf) * G_ss(kv,kf)
       P_tt = P_tt + node_list%node(iv)%chi_correction(i_harm,kf) * element_list%element(i_elm)%size(kv,kf) * G_tt(kv,kf)
+#endif /*!defined(USE_DOMM) && !defined(USE_EXT_FIELD)*/
     else if (i_var == 6) then
+#if !defined(USE_DOMM) && defined(USE_EXT_FIELD)
       P    = P    + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G(kv,kf)
       P_s  = P_s  + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G_s(kv,kf)
       P_t  = P_t  + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G_t(kv,kf)
       P_st = P_st + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G_st(kv,kf)
       P_ss = P_ss + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G_ss(kv,kf)
       P_tt = P_tt + node_list%node(iv)%b_vac_field(i_harm,kf,i_dim) * element_list%element(i_elm)%size(kv,kf) * G_tt(kv,kf)
-#endif /*USE_DOMM*/
+#endif /*!defined(USE_DOMM) && defined(USE_EXT_FIELD)*/
     endif
   end do
 end do
