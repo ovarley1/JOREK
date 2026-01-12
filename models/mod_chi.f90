@@ -8,7 +8,7 @@ module mod_chi
   use phys_module, only: domm, dcoef, F0, R_domm, PI
   implicit none
   private 
-  public init_chi_basis, get_chi, get_chi_domm, get_chi_corr, compute_chi_on_gauss_points
+  public init_chi_basis, get_chi, get_chi_domm, get_chi_corr, get_chi_corr_ext, compute_chi_on_gauss_points
 
   integer, parameter :: m_tor = (n_coord_tor - 1)/2
   

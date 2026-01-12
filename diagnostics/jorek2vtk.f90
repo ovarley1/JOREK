@@ -557,7 +557,11 @@ do i=1,element_list%n_elements
 
       chi = get_chi(R,Z,toroidal_angle,node_list,element_list,i,s,t)
 #ifndef USE_DOMM
+#ifndef USE_EXT_FIELD
       chi_corr = get_chi_corr(node_list,element_list,i,s,t,toroidal_angle)
+#else
+      chi_corr = get_chi_corr_ext(node_list,element_list,i,s,t,toroidal_angle)
+#endif
 #endif
 
       grad_chi = (/ chi(1,0,0), chi(0,1,0), chi(0,0,1)/BigR /)
