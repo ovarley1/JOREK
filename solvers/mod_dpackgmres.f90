@@ -42,7 +42,7 @@ contains
 !  upon the use of the Source Code. The licensee shall use reasonable
 !  endeavours to notify the authors of the package of this publication.
 !
-!  [1] V. Frayssé, L. Giraud, S. Gratton, and J. Langou, A set of GMRES 
+!  [1] V. Frayss351, L. Giraud, S. Gratton, and J. Langou, A set of GMRES
 !    routines for real and complex arithmetics on high performance
 !    computers, CERFACS Technical Report TR/PA/03/3, public domain software
 !    available on www.cerfacs/algor/Softs, 2003
@@ -292,7 +292,7 @@ contains
             sizeWrk  = sizeWrk  + 1
          endif
 !*
-         if (iwarn.ne.0) then
+         if ((iwarn.ne.0) .and. (my_id .eq. 0)) then
            write(iwarn,*)
            write(iwarn,*) ' WARNING GMRES : '
            write(iwarn,*) '       For M = ',m,' optimal value '     

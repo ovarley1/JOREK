@@ -518,7 +518,9 @@ if (RMP_on) then
 endif
 
 
-write(*,*) "n elements:", element_list%n_elements
+if (my_id .eq. 0) then
+  write(*,*) "n elements:", element_list%n_elements
+endif
 
 ! --- Broadcast grid information and input parameters to other MPI procs
   call broadcast_elements(my_id, element_list)                ! elements
