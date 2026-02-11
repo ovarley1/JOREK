@@ -52,6 +52,11 @@ allocate(element_neighbours(4,element_list%n_elements))
 
 element_neighbours = 0
 
+write(*,*) "About to start elements loop", element_list%n_elements
+!$omp parallel default(none) &
+!$omp   shared(node_list, element_list, element_neighbours) &
+!$omp   private(i,j,iside_i,iside_j)
+!$omp do
 do i=1,element_list%n_elements
   
   do j=i+1,element_list%n_elements
@@ -63,6 +68,8 @@ do i=1,element_list%n_elements
     
   enddo
 enddo
+!$omp end do
+!$omp end parallel
 
 !-------- possibilities
 ! - total length of traced field line (connection length)
@@ -422,6 +429,7 @@ L_IL: do i_lines=1,n_lines
     Rp(ip) = R_line
     Zp(ip) = Z_line
     Tp(ip)  = atan2( Z_line - ES%Z_axis, R_line - ES%R_axis)
+    ! TODO: Does this need to be updated to use the R_axis and Z_axis in the plane considered?
     Pp(ip)  = get_psi_n(psi_out, Z_line)
 
     if (i_elm .eq. 0) exit
