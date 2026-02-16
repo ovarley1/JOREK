@@ -470,12 +470,12 @@ module mod_chi
     integer, intent(in) :: i_elm
     real*8,  intent(in) :: s, t, phi
     real*8, dimension(0:n_order-1,0:n_order-1,0:n_order-1) :: get_chi_corr_ext
-    real*8, dimension(n_order) :: B, B_s, B_t, B_p_coord, B_x, B_y, B_p    ! Index represents the direction of the field:  1: R, 2: Z, 3: phi
+    real*8, dimension(n_order) :: B, B_s, B_t, B_st, B_p_coord, B_x, B_y, B_p    ! Index represents the direction of the field:  1: R, 2: Z, 3: phi
     integer :: i_harm, i_tor, i_var, i_dim
     real*8  :: R, R_s, R_t, R_p, R_ss, R_tt, R_st, R_pp, R_sp, R_tp
     real*8  :: Z, Z_s, Z_t, Z_p, Z_ss, Z_tt, Z_st, Z_pp, Z_sp, Z_tp
     real*8  :: B_harm, B_harm_s, B_harm_t, B_harm_st,B_harm_ss,B_harm_tt  ! The second derivatives aren't used
-    real*8  :: xjac
+    real*8  :: xjac, xjac_s
 
     ! Get R, Z, phi geometry of point.
     call interp_RZP(node_list,element_list,i_elm,s,t,phi,R,R_s,R_t,R_p,R_st,R_ss,R_tt,R_sp,R_tp,R_pp, &
@@ -490,22 +490,31 @@ module mod_chi
         i_harm = 2*i_tor
         call interp_gvec(node_list,element_list,i_elm,i_var,i_dim,i_harm,s,t,B_harm, B_harm_s, B_harm_t, &
                                                                              B_harm_st,B_harm_ss,B_harm_tt)
-        B(i_dim)   = B(i_dim)   + B_harm   * cos(mode_coord(i_harm)*phi)
-        B_s(i_dim) = B_s(i_dim) + B_harm_s * cos(mode_coord(i_harm)*phi)
-        B_t(i_dim) = B_t(i_dim) + B_harm_t * cos(mode_coord(i_harm)*phi)
-        B_p(i_dim) = B_p(i_dim) - B_harm   * mode_coord(i_harm) * sin(mode_coord(i_harm)*phi)
+        B(i_dim)   = B(i_dim)     + B_harm    * cos(mode_coord(i_harm)*phi)
+        B_s(i_dim) = B_s(i_dim)   + B_harm_s  * cos(mode_coord(i_harm)*phi)
+        B_t(i_dim) = B_t(i_dim)   + B_harm_t  * cos(mode_coord(i_harm)*phi)
+        B_st(i_dim) = B_st(i_dim) + B_harm_st * cos(mode_coord(i_harm)*phi) ! This is just needed on axis for L'Hopital's rule.
+        B_p(i_dim) = B_p(i_dim)   - B_harm    * mode_coord(i_harm) * sin(mode_coord(i_harm)*phi)
 
         call interp_gvec(node_list,element_list,i_elm,i_var,i_dim,i_harm+1,s,t,B_harm, B_harm_s, B_harm_t, &
                                                                                B_harm_st,B_harm_ss,B_harm_tt)
-        B(i_dim)   = B(i_dim)   - B_harm   * sin(mode_coord(i_harm)*phi)
-        B_s(i_dim) = B_s(i_dim) - B_harm_s * sin(mode_coord(i_harm)*phi)
-        B_t(i_dim) = B_t(i_dim) - B_harm_t * sin(mode_coord(i_harm)*phi)
-        B_p(i_dim) = B_p(i_dim) - B_harm   * mode_coord(i_harm) * cos(mode_coord(i_harm)*phi)
+        B(i_dim)   = B(i_dim)     - B_harm    * sin(mode_coord(i_harm)*phi)
+        B_s(i_dim) = B_s(i_dim)   - B_harm_s  * sin(mode_coord(i_harm)*phi)
+        B_t(i_dim) = B_t(i_dim)   - B_harm_t  * sin(mode_coord(i_harm)*phi)
+        B_st(i_dim) = B_st(i_dim) - B_harm_st * sin(mode_coord(i_harm)*phi) ! This is just needed on axis for L'Hopital's rule.
+        B_p(i_dim) = B_p(i_dim)   - B_harm    * mode_coord(i_harm) * cos(mode_coord(i_harm)*phi)
       end do
 
       ! Calculate the R,Z,phi derivatives.
-      B_x(i_dim) = ( Z_t * B_s(i_dim) - Z_s * B_t(i_dim)) / xjac
-      B_y(i_dim) = (-R_t * B_s(i_dim) + R_s * B_t(i_dim)) / xjac
+      ! Use L'Hopital's rule (differentiate numerator and denominator wrt s) if the derivatives are being evaluated on the axis
+      if (i_elm .le. n_tht .and. s .eq. 0.d0) then
+        xjac_s = R_s*Z_st - R_st*Z_s
+        B_x(i_dim) = ( Z_st * B_s(i_dim) - Z_s * B_st(i_dim)) / xjac_s
+        B_y(i_dim) = (-R_st * B_s(i_dim) + R_s * B_st(i_dim)) / xjac_s
+      else ! If not, then we use the standard expressions for B_x and B_y
+        B_x(i_dim) = ( Z_t * B_s(i_dim) - Z_s * B_t(i_dim)) / xjac
+        B_y(i_dim) = (-R_t * B_s(i_dim) + R_s * B_t(i_dim)) / xjac
+      end if
       B_p(i_dim) = B_p(i_dim) - B_x(i_dim) * R_p - B_y(i_dim) * Z_p
     end do
 
