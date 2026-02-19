@@ -193,8 +193,8 @@ do i_plane = 1, n_planes_out
 
         ! B_vac and B_pert components
         B_vac(i_R, i_Z, i_plane)  = sqrt(Bv2)
-        B_pert(i_R, i_Z, i_plane) = sqrt((BR(i_R, i_Z, i_plane) - chi(1,0,0))**2 + &
-                                         (BZ(i_R, i_Z, i_plane) - chi(0,1,0))**2 + &
+        B_pert(i_R, i_Z, i_plane) = sqrt((BR(i_R, i_Z, i_plane)   - chi(1,0,0))**2 + &
+                                         (BZ(i_R, i_Z, i_plane)   - chi(0,1,0))**2 + &
                                          (Bphi(i_R, i_Z, i_plane) - chi(0,0,1)/R)**2)
 
       else if (R .ge. 0) then
