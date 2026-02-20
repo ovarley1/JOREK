@@ -23,18 +23,17 @@ program find_axis3D
   use mod_chi
   implicit none
   
-  integer :: n_turn, n_iter, ierr, i, j, iside_i, iside_j, ielm, ifail, i_turn, n_phi, i_phi, i_steps, ielm_prev, ielm_tmp, ip
-  real*8  :: R_init, z_init, R_out, z_out, s_out, t_out, R_line, z_line, p_line, s_line, t_line, delta_phi, delta_phi_local, tol
-  real*8  :: delta_phi_step, delta_s, delta_t, s_mid, t_mid, p_mid, small_delta_s, small_delta_t, small_delta, R_in, z_in, R, z
-  real*8  :: Rc, zc, error, R_start, z_start, mix
+  integer :: n_turn, n_iter, ierr, i, j, iside_i, iside_j, ielm, ifail, i_turn, n_phi, i_phi, i_steps, ielm_prev, ielm_tmp, ip, checked_elms
+  real*8  :: R_init, Z_init, P_init, R_out, Z_out, s_out, t_out, R_line, Z_line, P_line, s_line, t_line, delta_phi, delta_phi_local, tol
+  real*8  :: delta_phi_step, delta_s, delta_t, s_mid, t_mid, p_mid, small_delta_s, small_delta_t, small_delta, R_in, Z_in, R, Z
+  real*8  :: Rc, zc, error, R_start, Z_start, P_start, mix
   logical :: pos_out, success
   
   real*8, dimension(:), allocatable :: Rp, zp
   
   character(:), allocatable :: filename, outfile
   
-  namelist /find_axis_params/ filename, outfile, R_init, z_init, n_turn, n_iter, mix, tol, pos_out
-  
+  namelist /find_axis_params/ filename, outfile, R_init, Z_init, P_init, n_turn, n_iter, mix, tol, pos_out
   call det_modes
   call initialise_basis
   call init_chi_basis
@@ -43,7 +42,8 @@ program find_axis3D
   filename = "jorek_restart"
   outfile = "axis_position.dat"
   R_init = R_geo
-  z_init = z_geo
+  Z_init = Z_geo
+  P_init = 2.d0*pi*float(i_plane_rtree - 1)/float(n_period*n_plane)
   n_turn = 10
   n_iter = 10
   mix    = 0.5
@@ -63,8 +63,8 @@ program find_axis3D
   write(*,*) "***************************************"
   write(*,*) " Searching for axis in file ", filename
   write(*,*) " Output file: ", outfile
-  write(*,'(A,2E14.6)') "  Initial guess: ", R_init, z_init
-  write(*,*) " On poloidal plane ", i_plane_rtree
+  write(*,'(A,2E14.6)') "  Initial guess: ", R_init, Z_init
+  write(*,*) " On poloidal plane ", P_init
   write(*,*) " Number of toroidal turns to be used: ", n_turn
   write(*,*) " Number of iterations: ", n_iter
   write(*,'(A,E14.6)') "  Mixing factor: ", mix
@@ -76,7 +76,10 @@ program find_axis3D
   
   allocate(element_neighbours(4,element_list%n_elements))
   element_neighbours = 0
-
+!$omp parallel default(none) &
+!$omp   shared(node_list, element_list, element_neighbours) &
+!$omp   private(i,j,iside_i,iside_j)
+!$omp do
   do i=1,element_list%n_elements
     do j=i+1,element_list%n_elements
       if (neighbours(node_list,element_list%element(i),element_list%element(j),iside_i,iside_j)) then
@@ -85,30 +88,32 @@ program find_axis3D
       end if
     end do
   end do
+!$omp end do
+!$omp end parallel
   
   n_phi     = 1500
   delta_phi = 2.d0*pi/float(n_period*n_phi)
   allocate(Rp(n_turn),zp(n_turn))
   R_start = R_init
-  z_start = z_init
+  Z_start = Z_init
+  P_start = P_init
   success = .false.
   
   if (pos_out) open(13,file="position_R-z.dat")
   ! Begin iterations
   L_IT: do i=1,n_iter
     ip = 0
-  
-    call find_RZ(node_list,element_list,R_start,z_start,R_out,z_out,ielm,s_out,t_out,ifail)
+    call find_RZP(node_list,element_list,R_start,Z_start,P_start,R_out,Z_out,ielm,s_out,t_out,ifail,checked_elms)
     if (ifail .ne. 0) then
-      write(*,*) "Can not find RZ,", ifail
+      write(*,*) "Can not find RZ,", ifail, R_start, Z_start, P_start
       stop 1
     end if
     
     write(*,'(A,I4,A,2E14.6)') "Starting iteration ", i, "; position: ", R_start, z_start
   
     R_line = R_start
-    z_line = z_start
-    p_line = 2.d0*pi*float(i_plane_rtree - 1)/float(n_period*n_plane)
+    Z_line = Z_start
+    P_line = P_start
     s_line = s_out
     t_line = t_out
   
