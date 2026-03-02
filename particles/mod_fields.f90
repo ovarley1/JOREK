@@ -489,7 +489,7 @@ pure function rot_tmp(x,A,dA) result(rotA)
   real*8, intent(in)  :: x(3), A(3), dA(3,3)
   real*8              :: rotA(3)
   rotA(1) = dA(3,2) - dA(2,3) / x(1)
-  rotA(2) = dA(1,3) - dA(3,1) - A(3) / x(1)
+  rotA(2) = dA(1,3)/x(1) - dA(3,1) - A(3) / x(1)
   rotA(3) = dA(2,1) - dA(1,2)
   return
 end
@@ -756,7 +756,7 @@ subroutine check_consistency_RK4(fields, i_elm, st)
   real*8             :: U, U_R, U_Z, U_phi, t_norm
 
   integer            :: i_elm_p, i_elm_m, ifail
-  real*8             :: st_p(2), st_m(2), Rout, Zout, R_p, Z_p, R_m, Z_m, delta, error
+  real*8             :: st_p(2), st_m(2), Rout, Zout, R_p, Z_p, R_m, Z_m, phi_m, phi_p, delta, error
   real*8             :: A_p(3), dA_p(3,3), B_p(3), db_p(3,3), Bnorm_p(3), dBnorm_p(3,3), Bn_p, dBn_p(3), E_p(3)
   real*8             :: A_m(3), dA_m(3,3), B_m(3), db_m(3,3), Bnorm_m(3), dBnorm_m(3,3), Bn_m, dbn_m(3), E_m(3)
   logical            :: verbose = .false.
@@ -783,7 +783,7 @@ subroutine check_consistency_RK4(fields, i_elm, st)
   call calc_RK4(fields, time, i_elm_m, st_m, phi, A_m, dA_m, B_m, dB_m, Bnorm_m, dBnorm_m, bn_m, dBn_m, E_m)
 
   if (verbose) then
-    write(*,*) 'RK4 consistency check : '
+  write(*,*) 'RK4 consistency check : R dependence'
     write(*,'(A,8e18.10)') 'A(1),  dA(1,1)  : ',A(1), dA(1,1), (A_p(1) - A_m(1))/ (2.d0*delta)
     write(*,'(A,8e18.10)') 'A(2),  dA(2,1)  : ',A(2), dA(2,1), (A_p(2) - A_m(2))/ (2.d0*delta)
     write(*,'(A,8e18.10)') 'A(3),  dA(3,1)  : ',A(3), dA(3,1), (A_p(3) - A_m(3))/ (2.d0*delta)
@@ -812,6 +812,7 @@ subroutine check_consistency_RK4(fields, i_elm, st)
   call calc_RK4(fields, time, i_elm_m, st_m, phi, A_m, dA_m, B_m, dB_m, Bnorm_m, dBnorm_m, bn_m, dBn_m, E_m)
 
   if (verbose) then
+  write(*,*) 'RK4 consistency check : Z dependence'
     write(*,'(A,8e18.10)') 'A(1),  dA(1,2)  : ',A(1), dA(1,2), (A_p(1) - A_m(1))/ (2.d0*delta)
     write(*,'(A,8e18.10)') 'A(2),  dA(2,2)  : ',A(2), dA(2,2), (A_p(2) - A_m(2))/ (2.d0*delta)
     write(*,'(A,8e18.10)') 'A(3),  dA(3,2)  : ',A(3), dA(3,2), (A_p(3) - A_m(3))/ (2.d0*delta)
@@ -828,6 +829,37 @@ subroutine check_consistency_RK4(fields, i_elm, st)
   error = error + sum(abs(dB(:,2) - (B_p(:) - B_m(:))/(2.d0*delta)))
   error = error +     abs(dbn(2)  - (bn_p   - bn_m)  /(2.d0*delta))
   error = error + sum(abs(dBnorm(:,2) - (Bnorm_p(:) - Bnorm_m(:))/(2.d0*delta)))
+
+R_p = R 
+Z_p = Z
+phi_p = phi + delta
+call find_RZ_nearby(fields%node_list, fields%element_list, R, Z, st(1), st(2), i_elm, R_p, Z_p, st_p(1), st_p(2), i_elm_p, ifail)
+call calc_RK4(fields, time, i_elm_p, st_p, phi_p, A_p, dA_p, B_p, dB_p, Bnorm_p, dBnorm_p, bn_p, dBn_p, E_p)
+
+R_m = R
+Z_m = Z
+phi_m = phi - delta
+call find_RZ_nearby(fields%node_list, fields%element_list, R, Z, st(1), st(2), i_elm, R_m, Z_m, st_m(1), st_m(2), i_elm_m, ifail)
+call calc_RK4(fields, time, i_elm_m, st_m, phi_m, A_m, dA_m, B_m, dB_m, Bnorm_m, dBnorm_m, bn_m, dBn_m, E_m)
+
+if (verbose) then
+  write(*,*) 'RK4 consistency check : phi dependence'
+  write(*,'(A,8e18.10)') 'A(1),  dA(1,3)  : ',A(1), dA(1,3), (A_p(1) - A_m(1))/ (2.d0*delta)
+  write(*,'(A,8e18.10)') 'A(2),  dA(2,3)  : ',A(2), dA(2,3), (A_p(2) - A_m(2))/ (2.d0*delta)
+  write(*,'(A,8e18.10)') 'A(3),  dA(3,3)  : ',A(3), dA(3,3), (A_p(3) - A_m(3))/ (2.d0*delta)
+  write(*,'(A,8e18.10)') 'bn,    dbn(3)   : ',bn,   dbn(3),  (bn_p   - bn_m)  / (2.d0*delta)
+  write(*,'(A,8e18.10)') 'B(1),  dB(1,3)  : ',B(1), dB(1,3), (B_p(1) - B_m(1))/ (2.d0*delta)
+  write(*,'(A,8e18.10)') 'B(2),  dB(2,3)  : ',B(2), dB(2,3), (B_p(2) - B_m(2))/ (2.d0*delta)
+  write(*,'(A,8e18.10)') 'B(3),  dB(3,3)  : ',B(3), dB(3,3), (B_p(3) - B_m(3))/ (2.d0*delta)
+  write(*,'(A,8e18.10)') 'Bnorm(1),  dBnorm(1,3)  : ',Bnorm(1), dBnorm(1,3), (Bnorm_p(1) - Bnorm_m(1))/ (2.d0*delta)
+  write(*,'(A,8e18.10)') 'Bnorm(2),  dBnorm(2,3)  : ',Bnorm(2), dBnorm(2,3), (Bnorm_p(2) - Bnorm_m(2))/ (2.d0*delta)
+  write(*,'(A,8e18.10)') 'Bnorm(3),  dBnorm(3,3)  : ',Bnorm(3), dBnorm(3,3), (Bnorm_p(3) - Bnorm_m(3))/ (2.d0*delta)
+endif
+
+error =         sum(abs(dA(:,3) - (A_p(:) - A_m(:))/(2.d0*delta)))
+error = error + sum(abs(dB(:,3) - (B_p(:) - B_m(:))/(2.d0*delta)))
+error = error +     abs(dbn(3)  - (bn_p   - bn_m)  /(2.d0*delta))
+error = error + sum(abs(dBnorm(:,3) - (Bnorm_p(:) - Bnorm_m(:))/(2.d0*delta)))
 
   write(*,*) 'RK4 consistency : error : ',error
 

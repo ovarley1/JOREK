@@ -946,6 +946,7 @@ module phys_module
   real*8  :: D_neutral
 
   !> @name Particles-related input parameters
+  logical :: use_particles       ! Flag if simulation contains particles
   integer :: n_aux_var = n_var   ! number of variables in aux_node_list (= n_var is temporary)
   integer :: n_diag_var = n_var  ! number of variables in diag_node_list (= n_var is temporary)
   logical :: restart_particles

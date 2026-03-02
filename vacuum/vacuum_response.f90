@@ -2798,13 +2798,13 @@ module vacuum_response
     integer :: ierr
 
     if ( sr%n_tor == 0 ) then
-      write(*,*) 'Remark: Routine init_vacuum_response is not doing anything since sr%n_tor==0.'
+      if (my_id .eq. 0) write(*,*) 'Remark: Routine init_vacuum_response is not doing anything since sr%n_tor==0.'
       sr%initialized = .true.
       return
     end if
 
     if ( .not. freeboundary_equil ) then
-      write(*,*) 'Remark: Routine init_vacuum_response is not doing anything since freeboundary_equil=.false..'
+      if (my_id .eq. 0) write(*,*) 'Remark: Routine init_vacuum_response is not doing anything since freeboundary_equil=.false..'
       sr%initialized = .true.
       return
     end if

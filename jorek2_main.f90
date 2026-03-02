@@ -307,7 +307,8 @@ mpi_required = 0
       write(*,*) 'WARNING: Axis treatments set via input file is not the same as that in the restart file.'
       write(*,*) 'You are trying to restart the simulation with treat_axis = ', input_treat_axis
       write(*,*) 'Earlier treat_axis was set to = ', treat_axis
-      write(*,*) 'STOP' 
+      write(*,*) 'STOP'
+      call MPI_Abort(MPI_COMM_WORLD, 29, IERR)
       stop      
     endif
 
@@ -505,7 +506,6 @@ if ( freeboundary ) then
   call update_response(my_id,tstep,  resistive_wall)
   call import_external_fields('coil_field.dat', my_id)
   call set_coil_curr_time_trace()
-  call read_Z_axis_profile() 
   if ( (.not. restart) .or. (.not. wall_curr_initialized) ) call init_wall_currents(my_id, resistive_wall)
 end if
   
@@ -546,7 +546,10 @@ endif
   ! --- from the previous time-step, which is only read by my_id=0 from the restart file
   call broadcast_equil_state(my_id)                           ! equil_state
 
-  if ( freeboundary ) call broadcast_vacuum(my_id, resistive_wall)
+  if ( freeboundary ) then
+     call broadcast_vacuum(my_id, resistive_wall)
+     call read_Z_axis_profile()
+  end if
 
   mhd_sim%my_id = my_id
   mhd_sim%n_cpu = n_cpu
@@ -728,7 +731,7 @@ endif
     call construct_matrix(mhd_sim, mhd_sim%local_elms, mhd_sim%n_local_elms, a_mat, rhs_vec, harmonic_matrix=.false.)
   
     call clck_time_barrier(t1); call clck_ldiff(t0,t1,tsecond)
-    if (my_id.eq.0) write(*,FMT_TIMING) my_id, '# Elapsed time in construct global matrix :',tsecond
+    if (my_id.eq.0) write(*,FMT_TIMING) my_id, '# Elapsed time construct global matrix: ',tsecond
       
     solver%tstep = tstep
     solver%istep = istep

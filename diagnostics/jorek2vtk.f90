@@ -481,7 +481,7 @@ enddo
 
 call initialise_basis                              ! define the basis functions at the Gaussian points
 
-call import_restart(node_list,  element_list, 'jorek_restart', rst_format, ierr, .true., aux_node_list=aux_node_list)
+call import_restart(node_list,  element_list, 'jorek_restart', rst_format, ierr, .true., aux_node_list=aux_node_list, use_3D_rtree=.false.)
 
 call init_chi_basis
 

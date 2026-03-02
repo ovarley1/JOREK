@@ -7,7 +7,7 @@ character(len=20), parameter :: rst_file_ind_fmt(2) = (/'(a,i6.6)', '(a,i5.5)'/)
 contains
 !> Imports a restart file written out by the routine export_restart.
 
-subroutine import_restart(node_list, element_list, filename, format_rst, ierr, no_perturbations, aux_node_list)
+subroutine import_restart(node_list, element_list, filename, format_rst, ierr, no_perturbations, aux_node_list, use_3D_rtree)
 
   use tr_module
   use data_structure
@@ -27,6 +27,7 @@ subroutine import_restart(node_list, element_list, filename, format_rst, ierr, n
   integer,                      intent(out)             :: ierr
   integer,                      intent(in)              :: format_rst  ! format of restart file 
   logical, optional,            intent(in)              :: no_perturbations ! don't initialize new harmonics
+  logical, optional,            intent(in)              :: use_3D_rtree ! use 3D rtree for stellarator model
  
   ! --- Local parameters
   type (type_bnd_element_list)           :: bnd_elm_list    
@@ -38,21 +39,25 @@ subroutine import_restart(node_list, element_list, filename, format_rst, ierr, n
   if ( rst_hdf5 == 0 ) then
     write(*,*) " Restart from BINARY file " // trim(filename) // '.rst'
     if(present(aux_node_list)) then 
-      call import_binary_restart(node_list, element_list, trim(filename)//'.rst', &
-           format_rst, ierr, no_perturbations, aux_node_list)
+      call import_binary_restart(node_list=node_list, element_list=element_list, &
+           filename=trim(filename)//'.rst', format_rst=format_rst, error=ierr, &
+           no_perturbations=no_perturbations, aux_node_list=aux_node_list, use_3D_rtree=use_3D_rtree)
    else
-      call import_binary_restart(node_list, element_list, trim(filename)//'.rst', &
-           format_rst, ierr, no_perturbations)
+      call import_binary_restart(node_list=node_list, element_list=element_list, &
+           filename=trim(filename)//'.rst', format_rst=format_rst, error=ierr, &
+           no_perturbations=no_perturbations, use_3D_rtree=use_3D_rtree)
    endif
 
   else if ( rst_hdf5 == 1 ) then
     write(*,*) " Restart from HDF5 file " // trim(filename) // '.h5'
     if(present(aux_node_list)) then 
-      call import_hdf5_restart(node_list, element_list, trim(filename)//'.h5', &
-           format_rst,ierr, no_perturbations, aux_node_list)
+      call import_hdf5_restart(node_list=node_list, element_list=element_list, &
+           filename=trim(filename)//'.h5', format_rst=format_rst, error=ierr, &
+           no_perturbations=no_perturbations, aux_node_list=aux_node_list, use_3D_rtree=use_3D_rtree)
    else
-      call import_hdf5_restart(node_list, element_list, trim(filename)//'.h5', &
-           format_rst,ierr, no_perturbations)
+      call import_hdf5_restart(node_list=node_list, element_list=element_list, &
+           filename=trim(filename)//'.h5', format_rst=format_rst, error=ierr, &
+           no_perturbations=no_perturbations, use_3D_rtree=use_3D_rtree)
    endif
  
   end if
@@ -69,7 +74,7 @@ end subroutine import_restart
 
 !
 ! Import a binary restart file
-subroutine import_binary_restart(node_list, element_list, filename, format_rst, error, no_perturbations, aux_node_list)
+subroutine import_binary_restart(node_list, element_list, filename, format_rst, error, no_perturbations, aux_node_list, use_3D_rtree)
 
   use tr_module 
   use data_structure
@@ -88,7 +93,7 @@ subroutine import_binary_restart(node_list, element_list, filename, format_rst, 
   integer,                       intent(out)             :: error
   integer,                       intent(in)              :: format_rst  ! format of restart file
   logical, optional,             intent(in)              :: no_perturbations ! don't initialize new harmonics
-  
+  logical, optional,             intent(in)              :: use_3D_rtree ! use 3D rtree for stellarator model
   ! --- Local variables
   integer              :: i, j, m, k, n_tor_tmp
   real*8               :: growth_mag, growth_kin, amplitude
@@ -886,7 +891,7 @@ endif
   if (allocated(values_tmp))     call tr_deallocate(values_tmp,"values_tmp",CAT_UNKNOWN)
   if (allocated(deltas_tmp))     call tr_deallocate(deltas_tmp,"deltas_tmp",CAT_UNKNOWN)
 
-  call populate_element_rtree(node_list, element_list)
+  call populate_element_rtree(node_list, element_list, use_3D_rtree)
   
   equil_initialized = .true.
 
@@ -896,7 +901,7 @@ end subroutine import_binary_restart
 
 !
 ! Import an HDF5 restart file
-subroutine import_hdf5_restart(node_list, element_list, filename, format_rst, error, no_perturbations, aux_node_list)
+subroutine import_hdf5_restart(node_list, element_list, filename, format_rst, error, no_perturbations, aux_node_list, use_3D_rtree)
 
 #include "version.h"
 
@@ -922,6 +927,7 @@ subroutine import_hdf5_restart(node_list, element_list, filename, format_rst, er
   integer,                      intent(in)              :: format_rst  ! format of restart file
   integer,                      intent(out)             :: error
   logical, optional,            intent(in)              :: no_perturbations ! don't initialize new harmonics
+  logical, optional,            intent(in)              :: use_3D_rtree ! whether to use 3D rtree for element search (if false, use 2D rtree)
   
   ! --- Perturbation-Import variables
   type (type_node_list)   , pointer	:: node_list_perturbation
@@ -2304,7 +2310,7 @@ subroutine import_hdf5_restart(node_list, element_list, filename, format_rst, er
 #else
   write (6,*) " ERROR: trying to import with hdf5 but USE_HDF5 was not set at compile-time"
 #endif
-  call populate_element_rtree(node_list, element_list)
+  call populate_element_rtree(node_list, element_list, use_3D_rtree)
 
   equil_initialized = .true.
   write(*,*) ' restart complete '
