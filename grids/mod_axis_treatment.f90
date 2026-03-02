@@ -318,7 +318,6 @@ else if (node_list%node(vg)%axis_dof == dof3) then
   Pmat(dof4,dof2) = node_list%node(vg)%x(1,dof4,1)  ;  Pmat(dof4,dof3) = node_list%node(vg)%x(1,dof4,2)
 #endif
 else
-  Pmat = 0.d0
   do jo=2,n_order+1
     Pmat(jo, jo) = 1.d0
   end do

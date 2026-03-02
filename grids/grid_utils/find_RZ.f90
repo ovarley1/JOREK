@@ -93,6 +93,12 @@ enddo
 
 checked_elms = size(i_elms)
 
+#if !STELLARATOR_MODEL 
+if (ielm_out .eq. 0) ifail = 99
+if (ifail .eq. 999) ielm_out = 0 ! Otherwise testing ielm=0 on output does not work anymore (and we don't always check ifail)
+return
+#endif
+
 allocate(neighbours(element_list%n_elements))
 
 allocate(queue(element_list%n_elements), visited(element_list%n_elements))
@@ -210,8 +216,7 @@ do istart = 1,5
   ifail = 999
 
   do i=1,ntrial
-    call interp_RZP(node_list,element_list,i_elm,x(1),x(2),phi_find,RRg1,dRRg1_dr,dRRg1_ds,dummy,dummy,dummy,dummy,dummy,dummy,dummy, &
-                                                               ZZg1,dZZg1_dr,dZZg1_ds,dummy,dummy,dummy,dummy,dummy,dummy,dummy)
+    call interp_RZP (node_list,element_list,i_elm,x(1),x(2),phi_find,RRg1,dRRg1_dr,dRRg1_ds,dummy,ZZg1,dZZg1_dr,dZZg1_ds,dummy)
 
     FVEC(1)   = RRg1 - R_find
     FVEC(2)   = ZZg1 - Z_find

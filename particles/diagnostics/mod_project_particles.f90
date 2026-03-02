@@ -636,8 +636,13 @@ subroutine write_particle_distribution_to_vtk(node_list,element_list,filename,ns
 
   n_nodes =  nsub*nsub*element_list%n_elements
 
-  allocate(scalars(n_plane,n_nodes, n_scalars), vectors(n_nodes,3,n_vectors))
   allocate(scalar_names(n_scalars),vector_names(n_vectors))
+
+#ifdef STELLARATOR_MODEL
+  allocate(scalars(n_plane, n_nodes, n_scalars), vectors(n_nodes,3,n_vectors))
+#else
+  allocate(scalars(1, n_nodes, n_scalars), vectors(n_nodes,3,n_vectors))
+#endif
 
   ivar = 0
   do i = 1, n_fields  ! Particle group
@@ -654,16 +659,49 @@ subroutine write_particle_distribution_to_vtk(node_list,element_list,filename,ns
       endif
     end do
   end do
+  
   if (ivar /= n_scalars) then
       print *, "Error: Mismatch in number of scalars and generated names."
       stop
   endif
 
-  do mp=1,n_plane
-    toroidal_angle = real((mp - 1), 8) * 2.d0 * PI / n_plane / n_period ! 2*PI / 6
+  scalars(:,:,:) = 0.e0
+  vectors        = 0.e0
 
-    scalars(mp,:,:) = 0.e0
-    vectors = 0.e0
+#ifndef STELLARATOR_MODEL
+
+  ! Create points for each element
+  !$omp parallel do default(none) &
+  !$omp shared(element_list,nsub,node_list,n_fields,scalars) &
+  !$omp private(i,j,k,l,m,inode,ivar,s,t,P,R,Z) schedule(static)
+  do i=1,element_list%n_elements
+    do j=1,n_fields
+      do k=1,n_tor+1
+        ivar = (j-1)*(n_tor+1) + k
+        do l=1,nsub
+          s = real(l-1,8)/real(nsub-1,8)
+          do m=1,nsub
+            t = real(m-1,8)/real(nsub-1,8)
+            inode = (i-1)*nsub*nsub+(l-1)*nsub+m
+            if (k == n_tor+1) then  ! add only the cosine terms (i.e. sum at phi=0)
+              scalars(1,inode, ivar) = scalars(1, inode, (j-1)*(n_tor+1) + 1)  & 
+                                     + sum(scalars(1, inode, (j-1)*(n_tor+1)+2 : (j-1)*(n_tor+1)+n_tor:2))
+            else
+              call interp(node_list, element_list, i, j, k, s, t, P)
+              scalars(1,inode,ivar) = real(P,4)
+            end if
+          end do
+        end do
+      end do
+    end do
+  end do
+  !$omp end parallel do
+
+#else
+
+  do mp=1, n_plane
+
+    toroidal_angle = real((mp - 1), 8) * 2.d0 * PI / n_plane / n_period 
 
     ! Create points for each element
     !$omp parallel do default(none) &
@@ -692,8 +730,9 @@ subroutine write_particle_distribution_to_vtk(node_list,element_list,filename,ns
     !$omp end parallel do
 
   end do
+#endif
 
-#if STELLARATOR_MODEL
+#ifdef STELLARATOR_MODEL
   do mp=1,n_plane
     write(i_filename, '(A,A,I0.3,A)') filename(:len_trim(filename) - 4), "_proj_plane", mp, ".vtk"
     call write_vtk(i_filename, xyz(mp,:,:), ien(mp,:,:), vtk_quad_type, scalar_names, scalars(mp,:,:))
@@ -702,7 +741,7 @@ subroutine write_particle_distribution_to_vtk(node_list,element_list,filename,ns
   call write_vtk(filename, xyz(1,:,:), ien(1,:,:), vtk_quad_type, scalar_names, scalars(1,:,:))
 #endif
 
-  deallocate(scalars, scalar_names)
+  deallocate(scalars, scalar_names, vectors, vector_names)
 
 end subroutine write_particle_distribution_to_vtk
 
