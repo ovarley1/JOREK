@@ -1,5 +1,5 @@
 !> Create a file with pressure, magnetic field, plasma beta to compare with HINT.
-program jorek2_fields_orin
+program jorek2_mgrid
   
 use data_structure
 use phys_module
@@ -176,7 +176,7 @@ do i_plane = 1, n_planes_out
         xjac = R_s_out * Z_t_out - R_t_out * Z_s_out
 
         dpsidx = (Z_t_out * psi_s - Z_s_out * psi_t) / xjac
-        dpsidy = (-Z_t_out * psi_s + R_s_out * psi_t) / xjac
+        dpsidy = (-R_t_out * psi_s + R_s_out * psi_t) / xjac
         dpsidp = psi_p - dpsidx * R_p_out - dpsidy * Z_p_out
   
         magnetic_pressure(i_R, i_Z, i_plane) = (Bv2*(1.d0 + (dpsidx**2 + dpsidy**2 + dpsidp**2/R**2)/F0**2) - &
@@ -197,10 +197,6 @@ do i_plane = 1, n_planes_out
                                          (BZ(i_R, i_Z, i_plane)   - chi(0,1,0))**2 + &
                                          (Bphi(i_R, i_Z, i_plane) - chi(0,0,1)/R)**2)
 
-      else if (R .ge. 0) then
-        BR(i_R, i_Z, i_plane) = 1.d3
-        BZ(i_R, i_Z, i_plane) = 0.d0
-        Bphi(i_R, i_Z, i_plane) = 0.d0
       else
         BR(i_R, i_Z, i_plane) = 1.d3
         BZ(i_R, i_Z, i_plane) = 0.d0
@@ -458,5 +454,5 @@ use netcdf
 end subroutine check
 
  
-end program jorek2_fields_orin
+end program jorek2_mgrid
 
