@@ -19,6 +19,8 @@ integer :: nR, nZ, nfp, n_planes_out
 real*8 :: R_min, R_max, Z_min, Z_max
 real*8, allocatable :: pressure(:,:,:), magnetic_pressure(:,:,:)
 real*8, allocatable :: BR(:,:,:), BZ(:,:,:), Bphi(:,:,:), B_vac(:,:,:), B_pert(:,:,:)  ! (nR, nZ, n_planes_out)
+real*8, allocatable :: BR_vac(:,:,:), BZ_vac(:,:,:), Bphi_vac(:,:,:)  ! (nR, nZ, n_planes_out)
+real*8, allocatable :: zj(:,:,:)  ! (nR, nZ, n_planes_out)
 integer :: i_R, i_Z, i_plane, i_elm
 real*8 :: R, Z, phi, R_out, R_s_out, R_t_out, R_p_out, Z_out, Z_s_out, Z_t_out, Z_p_out, s, t
 real*8 :: rho, temp, P, P_s, P_t, P_st, P_ss, P_tt, dummy
@@ -43,7 +45,7 @@ my_id = 0
 
 if ( my_id == 0 ) then
   write(*,*) '***************************************'
-  write(*,*) '* JOREK2_fields_orin                  *'
+  write(*,*) '* JOREK2_mgrid                  *'
   write(*,*) '***************************************'
 endif
 
@@ -106,6 +108,10 @@ allocate(magnetic_pressure(nR, nZ, n_planes_out))
 allocate(BR(nR, nZ, n_planes_out))
 allocate(BZ(nR, nZ, n_planes_out))
 allocate(Bphi(nR, nZ, n_planes_out))
+allocate(BR_vac(nR, nZ, n_planes_out))
+allocate(BZ_vac(nR, nZ, n_planes_out))
+allocate(Bphi_vac(nR, nZ, n_planes_out))
+allocate(zj(nR, nZ, n_planes_out))
 allocate(B_vac(nR, nZ, n_planes_out))
 allocate(B_pert(nR, nZ, n_planes_out))
 
@@ -120,6 +126,14 @@ BZ = 0.d0
 BZ = BZ / BZ
 Bphi = 0.d0
 Bphi = Bphi / Bphi
+BR_vac = 0.d0
+BR_vac = BR_vac / BR_vac
+BZ_vac = 0.d0
+BZ_vac = BZ_vac / BZ_vac
+Bphi_vac = 0.d0
+Bphi_vac = Bphi_vac / Bphi_vac
+zj = 0.d0
+zj = zj / zj
 B_vac = 0.d0
 B_vac = B_vac / B_vac
 B_pert = 0.d0
@@ -134,7 +148,7 @@ endif
 ! ===== LOOP THROUGH GRID AND COMPUTE physical values =====
 !$omp parallel default(none) &
 !$omp   shared(node_list, element_list, nR, nZ, n_planes_out, nfp, R_min, R_max, Z_min, Z_max, pressure,      &
-!$omp          magnetic_pressure, BR, BZ, Bphi, B_vac, B_pert, fact_mu0, F0)                                                 &
+!$omp          magnetic_pressure, BR, BZ, Bphi, BR_vac, BZ_vac, Bphi_vac, zj, B_vac, B_pert, fact_mu0, F0)     &
 !$omp   private(i_R, i_Z, i_plane, R, Z, phi, R_out, R_s_out, R_t_out, R_p_out, Z_out, Z_s_out, Z_t_out,      &
 !$omp           Z_p_out, i_elm, s, t, ifail, rho, temp, dummy, checked_elms, chi, Bv2,                        &
 !$omp           psi, psi_s, psi_t, psi_p, dpsidx, dpsidy, dpsidp, xjac)
@@ -161,6 +175,7 @@ do i_plane = 1, n_planes_out
         ! Get density and temperature then calculate pressure at this location
         call var_value(node_list,element_list,i_elm,var_rho,s,t,phi,rho, dummy, dummy, dummy)
         call var_value(node_list,element_list,i_elm,var_T,s,t,phi,temp, dummy, dummy, dummy)
+        call var_value(node_list,element_list,i_elm,var_zj,s,t,phi,zj(i_R, i_Z, i_plane), dummy, dummy, dummy)
 
         pressure(i_R, i_Z, i_plane) = rho * temp * fact_mu0
 
@@ -190,6 +205,9 @@ do i_plane = 1, n_planes_out
         BR(i_R, i_Z, i_plane)   = chi(1,0,0)   + (dpsidy * chi(0,0,1) - dpsidp * chi(0,1,0))/(R*F0)
         BZ(i_R, i_Z, i_plane)   = chi(0,1,0)   - (dpsidx * chi(0,0,1) - dpsidp * chi(1,0,0))/(R*F0)
         Bphi(i_R, i_Z, i_plane) = chi(0,0,1)/R + (dpsidx * chi(0,1,0) - dpsidy * chi(1,0,0))/F0
+        BR_vac(i_R, i_Z, i_plane)   = chi(1,0,0)
+        BZ_vac(i_R, i_Z, i_plane)   = chi(0,1,0)
+        Bphi_vac(i_R, i_Z, i_plane) = chi(0,0,1)/R
 
         ! B_vac and B_pert components
         B_vac(i_R, i_Z, i_plane)  = sqrt(Bv2)
@@ -197,7 +215,8 @@ do i_plane = 1, n_planes_out
                                          (BZ(i_R, i_Z, i_plane)   - chi(0,1,0))**2 + &
                                          (Bphi(i_R, i_Z, i_plane) - chi(0,0,1)/R)**2)
 
-      else
+      else  ! For running EMC3-Lite, we need a value even outside the domain, so set to large radial value to evacuate.
+        ! TODO: On the inboard side, this actually pushes into the domain. Hasn't been a problem so far but I should fix this.
         BR(i_R, i_Z, i_plane) = 1.d3
         BZ(i_R, i_Z, i_plane) = 0.d0
         Bphi(i_R, i_Z, i_plane) = 0.d0
@@ -214,7 +233,7 @@ if (my_id == 0) then
 endif
 
 ! ===== SAVE TO NETCDF FILE =====
-call save_to_netcdf(R_min, R_max, nR, Z_min, Z_max, nZ, n_planes_out, nfp, pressure, magnetic_pressure, BR, BZ, Bphi, B_vac, B_pert)
+call save_to_netcdf(R_min, R_max, nR, Z_min, Z_max, nZ, n_planes_out, nfp, pressure, magnetic_pressure, BR, BZ, Bphi, BR_vac, BZ_vac, Bphi_vac, zj, B_vac, B_pert)
 ! call save_to_ascii(R_min, R_max, nR, Z_min, Z_max, nZ, n_planes_out, nfp, pressure)
 
 
@@ -331,7 +350,7 @@ end subroutine save_to_ascii
 
 
 !> Save pressure data to NetCDF file in mgrid-compatible format
-subroutine save_to_netcdf(R_min, R_max, nR, Z_min, Z_max, nZ, n_planes_out, nfp, pressure, magnetic_pressure, BR, BZ, Bphi, B_vac, B_pert)
+subroutine save_to_netcdf(R_min, R_max, nR, Z_min, Z_max, nZ, n_planes_out, nfp, pressure, magnetic_pressure, BR, BZ, Bphi, BR_vac, BZ_vac, Bphi_vac, zj, B_vac, B_pert)
   use netcdf
   implicit none  
   ! Arguments
@@ -339,12 +358,15 @@ subroutine save_to_netcdf(R_min, R_max, nR, Z_min, Z_max, nZ, n_planes_out, nfp,
   real*8, intent(in)  :: R_min, R_max, Z_min, Z_max
   real*8, intent(in)  :: pressure(nR, nZ, n_planes_out), magnetic_pressure(nR, nZ, n_planes_out)
   real*8, intent(in)  :: BR(nR, nZ, n_planes_out), BZ(nR, nZ, n_planes_out), Bphi(nR, nZ, n_planes_out)
+  real*8, intent(in)  :: BR_vac(nR, nZ, n_planes_out), BZ_vac(nR, nZ, n_planes_out), Bphi_vac(nR, nZ, n_planes_out)
+  real*8, intent(in)  :: zj(nR, nZ, n_planes_out)
   real*8, intent(in)  :: B_vac(nR, nZ, n_planes_out), B_pert(nR, nZ, n_planes_out)
   
   ! NetCDF IDs
   integer :: ncid
   integer :: dim_rad_id, dim_zee_id, dim_phi_id
-  integer :: var_pres_id, var_mag_pres_id, var_br_id, var_bz_id, var_bp_id, var_bvac_id, var_bpert_id
+  integer :: var_pres_id, var_mag_pres_id, var_br_id, var_bz_id, var_bp_id
+  integer :: var_brvac_id, var_bzvac_id, var_bpvac_id, var_zj_id, var_bvac_id, var_bpert_id
   integer :: var_rmax_id, var_rmin_id, var_zmax_id, var_zmin_id
   integer :: var_ir_id, var_jz_id, var_kp_id, var_nfp_id
   character(len=256) :: filename
@@ -373,13 +395,17 @@ subroutine save_to_netcdf(R_min, R_max, nR, Z_min, Z_max, nZ, n_planes_out, nfp,
   ! Define variables 
   ! ----------------------------------
   ! 3D Field arrays (dimension order: R, Z, phi)
-  call check(nf90_def_var(ncid, "pres",   NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_pres_id))
-  call check(nf90_def_var(ncid, "mag_pres",   NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_mag_pres_id))
-  call check(nf90_def_var(ncid, "br_001",   NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_br_id))
-  call check(nf90_def_var(ncid, "bz_001",   NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_bz_id))
-  call check(nf90_def_var(ncid, "bp_001",   NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_bp_id))
-  call check(nf90_def_var(ncid, "bvac_001",   NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_bvac_id))
-  call check(nf90_def_var(ncid, "bpert_001",   NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_bpert_id))
+  call check(nf90_def_var(ncid, "pres",      NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_pres_id))
+  call check(nf90_def_var(ncid, "mag_pres" , NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_mag_pres_id))
+  call check(nf90_def_var(ncid, "zj",        NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_zj_id))
+  call check(nf90_def_var(ncid, "br_001",    NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_br_id))
+  call check(nf90_def_var(ncid, "bz_001",    NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_bz_id))
+  call check(nf90_def_var(ncid, "bp_001",    NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_bp_id))
+  call check(nf90_def_var(ncid, "brvac_001", NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_brvac_id))
+  call check(nf90_def_var(ncid, "bzvac_001", NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_bzvac_id))
+  call check(nf90_def_var(ncid, "bpvac_001", NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_bpvac_id))
+  call check(nf90_def_var(ncid, "bvac_001",  NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_bvac_id))
+  call check(nf90_def_var(ncid, "bpert_001", NF90_DOUBLE, (/ dim_rad_id, dim_zee_id, dim_phi_id /), var_bpert_id))
   ! Note this uses Fortran ordering so it corresponds to a python/C array pres[R,Z,phi]
 
   ! Geometry Scalars (Doubles)
@@ -389,9 +415,9 @@ subroutine save_to_netcdf(R_min, R_max, nR, Z_min, Z_max, nZ, n_planes_out, nfp,
   call check(nf90_def_var(ncid, "zmin", NF90_DOUBLE, var_zmin_id))
 
   ! Integer Parameters
-  call check(nf90_def_var(ncid, "ir", NF90_INT, var_ir_id))
-  call check(nf90_def_var(ncid, "jz", NF90_INT, var_jz_id))
-  call check(nf90_def_var(ncid, "kp", NF90_INT, var_kp_id))
+  call check(nf90_def_var(ncid, "ir",  NF90_INT, var_ir_id))
+  call check(nf90_def_var(ncid, "jz",  NF90_INT, var_jz_id))
+  call check(nf90_def_var(ncid, "kp",  NF90_INT, var_kp_id))
   call check(nf90_def_var(ncid, "nfp", NF90_INT, var_nfp_id))
 
   call check(nf90_enddef(ncid))  ! End define mode to write scalar variables
@@ -421,6 +447,10 @@ subroutine save_to_netcdf(R_min, R_max, nR, Z_min, Z_max, nZ, n_planes_out, nfp,
   call check(nf90_put_var(ncid, var_br_id, BR))
   call check(nf90_put_var(ncid, var_bz_id, BZ))
   call check(nf90_put_var(ncid, var_bp_id, Bphi))
+  call check(nf90_put_var(ncid, var_brvac_id, BR_vac))
+  call check(nf90_put_var(ncid, var_bzvac_id, BZ_vac))
+  call check(nf90_put_var(ncid, var_bpvac_id, Bphi_vac))
+  call check(nf90_put_var(ncid, var_zj_id, zj))
   call check(nf90_put_var(ncid, var_bvac_id, B_vac))
   call check(nf90_put_var(ncid, var_bpert_id, B_pert))
 
