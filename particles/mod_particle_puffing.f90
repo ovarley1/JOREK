@@ -16,6 +16,7 @@ module mod_particle_puffing
   use phys_module, only: type_valve, valves, part_group_configs, type_puff_ctrl, n_puff_segment_max 
   use mod_particle_group_id, only: matching_part_config_indices, matching_sim_groups_indices
   use mod_particle_create, only: type_part_create_scheme
+  use mpi
   
   implicit none
 
@@ -64,6 +65,8 @@ contains
 subroutine initialize_settings_from_puff_ctrl(sim, group_num, valve_num, new)
   use mod_particle_create, only: part_create_scheme
   use profiles, only: readProf
+  use tr_module
+  use mpi_mod
   
   implicit none
 
@@ -72,7 +75,7 @@ subroutine initialize_settings_from_puff_ctrl(sim, group_num, valve_num, new)
   integer,                intent(in)     :: valve_num
   type(particle_puffing), intent(inout)  :: new
 
-  integer                                :: i, config_num, file_len
+  integer                                :: i, config_num, file_len, ierr
   character(len=1000)                    :: identifier
 
   logical :: from_namelist, from_file
@@ -153,28 +156,41 @@ subroutine initialize_settings_from_puff_ctrl(sim, group_num, valve_num, new)
 
   !using puff rate from file
   if (from_file) then
-    !loading file
-    call readProf(new%times,new%rates,file_len,new%puff_ctrl%from_file)
+    ! read and check on main mpi thread
+    if (sim%my_id==0) then
+      !loading file
+      call readProf(new%times,new%rates,file_len,new%puff_ctrl%from_file)
 
-    !sanity checks
-    do i=1, file_len
-      if (new%rates(i) < 0) then
-        if (sim%my_id == 0) write(*,"(A,I2,A,I2,3A,I5,A)") "ERROR: negative rate in part_group_configs(",config_num,")%puff_ctrl(",valve_num,')%from_file="',trim(new%puff_ctrl%from_file),'" (position ',i,")."
-        stop
-      endif
-      if (new%times(i) < 0) then
-        if (sim%my_id == 0) write(*,"(A,I2,A,I2,3A,I5,A)") "ERROR: negative time in part_group_configs(",config_num,")%puff_ctrl(",valve_num,')%from_file="',trim(new%puff_ctrl%from_file),'" (position ',i,")."
-        stop
-      endif
+      !sanity checks
+      do i=1, file_len
+        if (new%rates(i) < 0) then
+          write(*,"(A,I2,A,I2,3A,I5,A)") "ERROR: negative rate in part_group_configs(",config_num,")%puff_ctrl(",valve_num,')%from_file="',trim(new%puff_ctrl%from_file),'" (position ',i,")."
+          call MPI_Abort(MPI_COMM_WORLD, 51, IERR)
+        endif
+        if (new%times(i) < 0) then
+          write(*,"(A,I2,A,I2,3A,I5,A)") "ERROR: negative time in part_group_configs(",config_num,")%puff_ctrl(",valve_num,')%from_file="',trim(new%puff_ctrl%from_file),'" (position ',i,")."
+          call MPI_Abort(MPI_COMM_WORLD, 52, IERR)
+        endif
 
-      !> check that the set times are increaseing
-      if (i > 1) then
-        if (new%times(i-1) >= new%times(i)) then
-          if (sim%my_id == 0) write(*,"(A,I2,A,I2,3A,I5,A)") "ERROR: puff rate time inputs in part_group_configs(",config_num,")%puff_ctrl(",valve_num,')%from_file="',trim(new%puff_ctrl%from_file),'" must be strictly increasing (this is violated at position ',i,")."
-          stop
-        endif 
-      endif
-    enddo
+        !> check that the set times are increaseing
+        if (i > 1) then
+          if (new%times(i-1) >= new%times(i)) then
+            write(*,"(A,I2,A,I2,3A,I5,A)") "ERROR: puff rate time inputs in part_group_configs(",config_num,")%puff_ctrl(",valve_num,')%from_file="',trim(new%puff_ctrl%from_file),'" must be strictly increasing (this is violated at position ',i,")."
+            call MPI_Abort(MPI_COMM_WORLD, 53, IERR)
+          endif 
+        endif
+      enddo
+    end if
+
+    !broadcast to all other ranks
+    call MPI_BCAST(file_len,1,MPI_INTEGER,0,MPI_COMM_WORLD,ierr)
+    if ( sim%my_id /= 0 ) then
+      call tr_allocate(new%times,1,file_len,"new%times",CAT_UNKNOWN)
+      call tr_allocate(new%rates,1,file_len,"new%rates",CAT_UNKNOWN)
+    end if
+    call MPI_BCAST(new%times,file_len,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(new%rates,file_len,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+    
   end if
 
   !> determine the current puffing segment and the last puffing segment 
