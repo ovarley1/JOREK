@@ -14,7 +14,7 @@ Andres working on this now
 
 ## [Reduced MHD](reduced_mhd.md): 
 
-__model 600__ is the workhorse for reduced MHD as it allows users to combine the different physics ($v_\parallel$, separate $T_e$ and $T_i$, fluid neutrals, fluid impurities, ...) they wish to keep in their simulations at [compile](../../compiling/getting_started/compiling.md) time. The variables that are always present in __model 600__ are:
+__model 600__ is the workhorse for reduced MHD as it allows users to combine the different physics ($v_\parallel$, separate $T_e$ and $T_i$, fluid neutrals, fluid impurities, ...) they wish to keep in their simulations at [compile](../../compiling/compilation_and_libraries/compiling.md) time. The variables that are always present in __model 600__ are:
 
 | Variable | Symbol | variable number | 
 | --- | --- | --- |

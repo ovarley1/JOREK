@@ -1,6 +1,6 @@
 ---
 title: "List of input parameters"
-nav_order: 2
+nav_order: 4
 parent: "Compiling and Running"
 layout: default
 render_with_liquid: false
@@ -595,4 +595,3 @@ render_with_liquid: false
 | **vert_FB_gain** | 0. | Gain parameters for vertical feedback controller;Proportional, derivative, integral gain of VFB controller | x | x | x | x | x |  |  |  |
 | **vert_FB_tact** | 1.d-9 | Time interval between two controller actions ([JOREK units]);Tact of VFB controller | x | x | x | x | x |  |  |  |
 {: .params-table}
-

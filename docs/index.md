@@ -12,15 +12,14 @@ render_with_liquid: false
 - **[Frequently Asked Questions (FAQ)](faq.md)**
 - **[Contributing to the Docs](contributing.md)**
 
-### Compiling and Running
+### [Compiling and Running](compiling/cat_compiling.md)
 
-- **[Getting started](compiling/getting_started/learn_jorek.md)**
-  - [Tutorials](compiling/getting_started/tutorials.md)
-  - [Compile](compiling/getting_started/compiling.md) \| [Hard-Coded Parameters](compiling/getting_started/hard-coded_parameters.md) \| [Preprocessor Flags](compiling/getting_started/preprocessor.md)
-  - [Run](compiling/getting_started/running.md) \| [Leonardo-CPU](compiling/getting_started/leonardo-cpu.md) \| [Pitagora-CPU](compiling/getting_started/pitagora-cpu.md) \| [Pitagora-GPU](compiling/getting_started/pitagora-gpu.md) \| [IPP Garching](compiling/getting_started/run_at_ipp_garching.md) \| [ITER Cluster](compiling/getting_started/iter_cluster.md) \| [EUROfusion Gateway](compiling/getting_started/eurofusion_gateway.md) \| [TGCC-CEA](compiling/getting_started/tgcc-cea.md) \| [MacOS](compiling/getting_started/macos.md)
+- [Obtain the Source Code](compiling/get_jorek.md) \| [Compilation and Libraries](compiling/compilation_and_libraries.md) \| [Run](compiling/running.md)
+- **[HPC & PC Configurations](compiling/hpc_pc_configurations.md)**
+  - [Leonardo-CPU](compiling/hpc_pc_configurations/leonardo-cpu.md) \| [LUMI-CPU](compiling/hpc_pc_configurations/lumi-cpu.md) \| [Pitagora-CPU](compiling/hpc_pc_configurations/pitagora-cpu.md) \| [Pitagora-GPU](compiling/hpc_pc_configurations/pitagora-gpu.md) \| [IPP Garching](compiling/hpc_pc_configurations/run_at_ipp_garching.md) \| [ITER Cluster](compiling/hpc_pc_configurations/iter_cluster.md) \| [EUROfusion Gateway](compiling/hpc_pc_configurations/eurofusion_gateway.md) \| [TGCC-CEA](compiling/hpc_pc_configurations/tgcc-cea.md) \| [macOS](compiling/hpc_pc_configurations/macos.md)
 - **[List of Input Parameters](compiling/input.md)**
-- **[Diagnostics and Scripts](compiling/diagnostics.md)**
-  - [JOREK-IMAS](compiling/diagnostics/jorek-imas.md)
+- **[Diagnostics and post-processing](diagnostics/cat_diagnostics.md)**
+  - [Diagnostics and Scripts](diagnostics/diagnostics.md) \| [JOREK-IMAS](diagnostics/jorek-imas.md)
 
 ### Code Development
 

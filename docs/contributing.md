@@ -196,13 +196,13 @@ See [Normalization](normalization.md) for details.
 For pages in a different directory, use a path relative to the current file:
 
 ```markdown
-[Getting Started](../compiling/getting_started/learn_jorek.md)
+[Compiling](compiling/compilation_and_libraries/compiling.md)
 ```
 
 Absolute paths from the repo root also work:
 
 ```markdown
-[Getting Started](compiling/getting_started/learn_jorek.md)
+[Compiling](compiling/compilation_and_libraries/compiling.md)
 ```
 
 Do not hard-code `.html` extensions — they will break if the site baseurl changes.
