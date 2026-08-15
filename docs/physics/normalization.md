@@ -59,12 +59,13 @@ render_with_liquid: false
 * **$n_{0}[m^{-3}]$**: $= \text{central\_density } 10^{20}$. central_density gets a default value in `preset_parameters.f90` and should be specified in the input file.
 * **$\rho_{0}[kg~m^{-3}]$**: $= \text{central\_mass}$. central_mass gets a default value in `preset_parameters.f90` and should be specified in the input file. 
 * **$\gamma$**: $= \text{GAMMA}$. GAMMA gets a default value of $5/3$ in `preset_parameters.f90`. 
-* **$\mu_{imp}$**: $= m\_i\_over\_m\_imp = m_{i}/m_{imp}$. Defined by the impurity species.
+* **$\mu_{imp}$**: `m_i_over_m_imp` $= m_{i}/m_{imp}$. Defined by the impurity species.
 
 ## Useful Constants:
-    * $m_{e0}=0.911\cdot10^{-30}kg$
-    * $m_{AMU}=1.661\cdot10^{-27}kg$
-    * $n_{deuterium}=2.014101777811AMU$
-    * $m_{tritium}=5.007\cdot10^{-27}kg$
-    * $\mu_{0}=4\cdot\pi\cdot10^{-7}Vs/(Am)$
-    * $e=1.602176565\cdot10^{-19}C$
+
+* $m_{e0}=0.911\cdot10^{-30}kg$
+* $m_{AMU}=1.661\cdot10^{-27}kg$
+* $n_{deuterium}=2.014101777811AMU$
+* $m_{tritium}=5.007\cdot10^{-27}kg$
+* $\mu_{0}=4\cdot\pi\cdot10^{-7}Vs/(Am)$
+* $e=1.602176565\cdot10^{-19}C$
