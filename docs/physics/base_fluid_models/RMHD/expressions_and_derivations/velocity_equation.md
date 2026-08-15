@@ -1,8 +1,8 @@
 ---
 title: "Derivation of the Parallel Momentum Equation"
 nav_order: 15
-parent: "Base Fluid Models"
-grand_parent: "Physics Models"
+parent: "Expressions and Derivations"
+grand_parent: "Reduced MHD models"
 layout: default
 render_with_liquid: false
 ---

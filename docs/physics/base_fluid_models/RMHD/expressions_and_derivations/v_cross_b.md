@@ -1,8 +1,8 @@
 ---
 title: "The v x B Term Expression"
 nav_order: 11
-parent: "Base Fluid Models"
-grand_parent: "Physics Models"
+parent: "Expressions and Derivations"
+grand_parent: "Reduced MHD models"
 layout: default
 render_with_liquid: false
 ---
@@ -36,4 +36,4 @@ $$\begin{equation*}\begin{split}
   \mathbf{B} \cdot \left( \mathbf{a^3}\times\mathbf{v} \right) = - \mathbf{B} \cdot \nabla_{pol} u = - \frac{1}{R} \left[u,\psi \right] {\color{grey}{- \frac{2\tau_{IC}}{\rho R}F_0[p_i,\psi] }}
 \end{split}\end{equation*}$$
 
-Information from the [coordinates](../coordinates.md) as well as the [vector-identities](../vector-identities.md) pages was used.
+Information from the [coordinates](../../../coordinates.md) as well as the [vector-identities](../../../vector-identities.md) pages was used.

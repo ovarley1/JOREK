@@ -1,8 +1,8 @@
 ---
 title: "Magnetic Vector Potential"
 nav_order: 6
-parent: "Base Fluid Models"
-grand_parent: "Physics Models"
+parent: "Expressions and Derivations"
+grand_parent: "Reduced MHD models"
 layout: default
 render_with_liquid: false
 ---

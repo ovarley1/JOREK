@@ -1,8 +1,8 @@
 ---
 title: "The Diamagnetic Vorticity Expression"
 nav_order: 14
-parent: "Base Fluid Models"
-grand_parent: "Physics Models"
+parent: "Expressions and Derivations"
+grand_parent: "Reduced MHD models"
 layout: default
 render_with_liquid: false
 ---
@@ -45,4 +45,4 @@ $$\begin{equation*}
   \omega^* = \nabla \cdot \left( \frac{\tau_{IC}}{\rho} \nabla_{pol} p_i - v_{||} \frac{1}{R^2} \nabla_{pol} \psi \right)
 \end{equation*}$$
 
-The full derivation of these terms, including the cancellation of terms with the gyro-viscous tensor, can be found in the [Vorticity Derivation](omega_deriv.md) and [Reduced MHD Models](reduced_mhd.md) pages.
+The full derivation of these terms, including the cancellation of terms with the gyro-viscous tensor, can be found in the [Vorticity Derivation](omega_deriv.md) and [RMHD Model](../rmhd_model.md) pages.
