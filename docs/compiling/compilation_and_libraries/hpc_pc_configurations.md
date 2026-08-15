@@ -1,7 +1,8 @@
 ---
 title: "HPC & PC Configurations"
-nav_order: 5
-parent: "Compiling and Running"
+nav_order: 10
+parent: "Compilation and Libraries"
+grand_parent: "Compiling and Running"
 has_children: true
 nav_fold: true
 layout: default

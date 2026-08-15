@@ -2,7 +2,7 @@
 title: "Leonardo with Intel oneAPI"
 nav_order: 3
 parent: "HPC & PC Configurations"
-grand_parent: "Compiling and Running"
+grand_parent: "Compilation and Libraries"
 layout: default
 render_with_liquid: false
 ---

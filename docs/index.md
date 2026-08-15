@@ -15,8 +15,8 @@ render_with_liquid: false
 ### [Compiling and Running](compiling/cat_compiling.md)
 
 - [Obtain the Source Code](compiling/get_jorek.md) \| [Compilation and Libraries](compiling/compilation_and_libraries.md) \| [Run](compiling/running.md)
-- **[HPC & PC Configurations](compiling/hpc_pc_configurations.md)**
-  - [Leonardo-CPU](compiling/hpc_pc_configurations/leonardo-cpu.md) \| [LUMI-CPU](compiling/hpc_pc_configurations/lumi-cpu.md) \| [Pitagora-CPU](compiling/hpc_pc_configurations/pitagora-cpu.md) \| [Pitagora-GPU](compiling/hpc_pc_configurations/pitagora-gpu.md) \| [IPP Garching](compiling/hpc_pc_configurations/run_at_ipp_garching.md) \| [ITER Cluster](compiling/hpc_pc_configurations/iter_cluster.md) \| [EUROfusion Gateway](compiling/hpc_pc_configurations/eurofusion_gateway.md) \| [TGCC-CEA](compiling/hpc_pc_configurations/tgcc-cea.md) \| [macOS](compiling/hpc_pc_configurations/macos.md)
+- **[HPC & PC Configurations](compiling/compilation_and_libraries/hpc_pc_configurations.md)**
+  - [Leonardo-CPU](compiling/compilation_and_libraries/hpc_pc_configurations/leonardo-cpu.md) \| [LUMI-CPU](compiling/compilation_and_libraries/hpc_pc_configurations/lumi-cpu.md) \| [Pitagora-CPU](compiling/compilation_and_libraries/hpc_pc_configurations/pitagora-cpu.md) \| [Pitagora-GPU](compiling/compilation_and_libraries/hpc_pc_configurations/pitagora-gpu.md) \| [IPP Garching](compiling/compilation_and_libraries/hpc_pc_configurations/run_at_ipp_garching.md) \| [ITER Cluster](compiling/compilation_and_libraries/hpc_pc_configurations/iter_cluster.md) \| [EUROfusion Gateway](compiling/compilation_and_libraries/hpc_pc_configurations/eurofusion_gateway.md) \| [TGCC-CEA](compiling/compilation_and_libraries/hpc_pc_configurations/tgcc-cea.md) \| [macOS](compiling/compilation_and_libraries/hpc_pc_configurations/macos.md)
 - **[List of Input Parameters](compiling/input.md)**
 - **[Diagnostics and post-processing](diagnostics/cat_diagnostics.md)**
   - [Diagnostics and Scripts](diagnostics/diagnostics.md) \| [JOREK-IMAS](diagnostics/jorek-imas.md)

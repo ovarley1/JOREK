@@ -2,7 +2,7 @@
 title: "ITER Cluster"
 nav_order: 13
 parent: "HPC & PC Configurations"
-grand_parent: "Compiling and Running"
+grand_parent: "Compilation and Libraries"
 layout: default
 render_with_liquid: false
 ---

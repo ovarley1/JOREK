@@ -2,7 +2,7 @@
 title: "TOK Cluster"
 nav_order: 10
 parent: "HPC & PC Configurations"
-grand_parent: "Compiling and Running"
+grand_parent: "Compilation and Libraries"
 layout: default
 render_with_liquid: false
 ---
@@ -62,7 +62,7 @@ You can either add these modules to your `~/.bashrc` file (not recommended, as c
 
 > **Warning:** There seems to be an issue when JOREK is run on clusters at IPP (TOK-I, TOK, DRACO, and COBRA) with more than one MPI task per harmonic. The run hangs at the first PASTIX call during the very first time-step. In such a situation, the combination of `Pastix_5.2.3` and `Scotch_5.1.12b` has been seen to fix this issue.
 
-- [Installation/compilation of libraries and JOREK](../compilation_and_libraries/compiling.md) works in the normal way.
+- [Installation/compilation of libraries and JOREK](../compiling.md) works in the normal way.
 - You can simply use the libraries already compiled by Ihor Holod (you may need to ask Matthias Hoelzl for access) via the following `Makefile.inc` file:
 
 ```makefile

@@ -2,7 +2,7 @@
 title: "macOS"
 nav_order: 16
 parent: "HPC & PC Configurations"
-grand_parent: "Compiling and Running"
+grand_parent: "Compilation and Libraries"
 layout: default
 render_with_liquid: false
 ---
@@ -33,7 +33,7 @@ brew install hdf5 --with-fortran --with-mpi
 export PATH="/usr/local/opt/coreutils/libexec/gnubin:$PATH"
 ```
 
-- Compile SCOTCH ([see here](../compilation_and_libraries/compiling.md)) with:
+- Compile SCOTCH ([see here](../compiling.md)) with:
 
 ```makefile
 EXE=
@@ -59,7 +59,7 @@ RANLIB= ranlib
 YACC= bison -pscotchyy -y -b y
 ```
 
-- Compile PaStiX ([see here](../compilation_and_libraries/compiling.md)) with:
+- Compile PaStiX ([see here](../compiling.md)) with:
 
 ```makefile
 HOSTARCH    = i686_mac
@@ -275,7 +275,7 @@ CCFDEB    := $(CCFDEB) $(CCTYPES) $(CCPASTIX)
 # Uncomment if y
 ```
 
-- Compile JOREK ([see here](../compilation_and_libraries/compiling.md)) using:
+- Compile JOREK ([see here](../compiling.md)) using:
 
 ```bash
 CC=gcc-7 make -j8

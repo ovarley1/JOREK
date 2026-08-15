@@ -2,7 +2,7 @@
 title: "Leonardo-CPU"
 nav_order: 1
 parent: "HPC & PC Configurations"
-grand_parent: "Compiling and Running"
+grand_parent: "Compilation and Libraries"
 layout: default
 render_with_liquid: false
 ---

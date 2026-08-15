@@ -2,7 +2,7 @@
 title: "TOK-I Cluster"
 nav_order: 9
 parent: "HPC & PC Configurations"
-grand_parent: "Compiling and Running"
+grand_parent: "Compilation and Libraries"
 layout: default
 render_with_liquid: false
 ---
@@ -35,7 +35,7 @@ It is recommended **not** to add `impi-interactive` to your `.bashrc`, as this m
 
 ## Compiling JOREK and Libraries
 
-- [Installation/compilation of libraries and JOREK](../compilation_and_libraries/compiling.md) works in the normal way
+- [Installation/compilation of libraries and JOREK](../compiling.md) works in the normal way
 - You can simply use the libraries available via:
 
 ```bash

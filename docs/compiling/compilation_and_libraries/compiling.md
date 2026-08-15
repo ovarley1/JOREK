@@ -9,11 +9,15 @@ render_with_liquid: false
 
 # Compiling JOREK
 
+**This page explains the libraries, build options, and other components required to compile JOREK. Before compiling any dependencies yourself, check whether prepared libraries are already available as modules on your HPC system.**
+
+**Ask colleagues who work on the relevant machine which modules and configurations they recommend, and consult the [HPC & PC Configurations](hpc_pc_configurations.md) section for system-specific instructions.**
+
 - **Check the code out from the git repository** as explained [here](../get_jorek.md).
 - **Compile JOREK** as explained at the end of this page.
 
 Specialized guides: 
-- [Compiling on macOS](../hpc_pc_configurations/macos.md)
+- [Compiling on macOS](hpc_pc_configurations/macos.md)
 - [Compiling MUMPS (+METIS)](compiling_mumps.md)
 - [Compiling with long integers int64](compiling_int64.md)
 - [Compiling all dependencies without MKL](compiling_wo_mkl.md)
