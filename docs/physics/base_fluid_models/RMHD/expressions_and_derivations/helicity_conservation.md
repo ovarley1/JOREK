@@ -1,8 +1,8 @@
 ---
 title: "Helicity Conservation"
-nav_order: 12
-parent: "Physics Options"
-grand_parent: "Howto"
+nav_order: 17
+parent: "Expressions and Derivations"
+grand_parent: "Reduced MHD models"
 layout: default
 render_with_liquid: false
 ---

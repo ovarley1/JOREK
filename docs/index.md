@@ -91,8 +91,8 @@ render_with_liquid: false
 - **[Run with kinetic neutrals and impurities](howto/ncs_ics_tutorial.md)**
 - Run particle simulations with **[neutral neutral collisions](howto/neutral_neutral_collisions.md)**
 - Activate the **[inward pinch term in the density equation](howto/inward_pinch_term.md)**
-- **[Computing parallel electric field $E_{\\vert\\vert}$ in JOREK](howto/efield_in_jorek.md)**
-- **[Helicity conservation](howto/helicity_conservation.md)**
+- **[Computing parallel electric field $E_{\\vert\\vert}$ in JOREK](physics/base_fluid_models/RMHD/expressions_and_derivations/efield_in_jorek.md)**
+- **[Helicity conservation](physics/base_fluid_models/RMHD/expressions_and_derivations/helicity_conservation.md)**
 
 ### Machines, Coordinates, Geometry, Synthetic Diagnostics, Reference Scenarios
 
