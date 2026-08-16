@@ -14,7 +14,7 @@ JOREK is open-source software. Its public repository is hosted on GitHub:
 
 ## Clone with SSH
 
-Use SSH if you have added an SSH key to your GitHub account and plan to push changes to a fork:
+Use SSH if you have added an SSH key to your GitHub account and plan to push changes to a fork. See GitHub's guide to [connecting to GitHub with SSH](https://docs.github.com/en/authentication/connecting-to-github-with-ssh) to set up your SSH keys:
 
 ```bash
 git clone git@github.com:iterorganization/JOREK.git
