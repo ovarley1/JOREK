@@ -12,6 +12,8 @@ Andres working on this now
 
 # JOREK Physics Models
 
+Note that on top of the models described below, **multiple switches are available to activate/deactive different terms and boundary conditions in the equations**. For this, go to [howto/physics_options](/howto/physics_options.md).
+
 ## [Reduced MHD](reduced_mhd.md): 
 
 __model 600__ is the workhorse for reduced MHD as it allows users to combine the different physics ($v_\parallel$, separate $T_e$ and $T_i$, fluid neutrals, fluid impurities, ...) they wish to keep in their simulations at [hard-coded parameters](/JOREK/compiling/compilation_and_libraries/hard-coded_parameters.html) time. The variables that are always present in __model 600__ are:
