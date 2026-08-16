@@ -16,11 +16,12 @@ render_with_liquid: false
 - **Check the code out from the git repository** as explained [here](../get_jorek.md).
 - **Compile JOREK** as explained at the end of this page.
 
-Specialized guides: 
-- [Compiling on macOS](hpc_pc_configurations/macos.md)
-- [Compiling MUMPS (+METIS)](compiling_mumps.md)
-- [Compiling with long integers int64](compiling_int64.md)
-- [Compiling all dependencies without MKL](compiling_wo_mkl.md)
+## Specialized Guides
+
+- [Compiling on macOS](/JOREK/compiling/compilation_and_libraries/hpc_pc_configurations/macos.html)
+- [Compiling MUMPS (+METIS)](/JOREK/compiling/compilation_and_libraries/compiling_mumps.html)
+- [Compiling with 64-bit integers](/JOREK/compiling/compilation_and_libraries/compiling_int64.html)
+- [Compiling all dependencies without Intel MKL](/JOREK/compiling/compilation_and_libraries/compiling_wo_mkl.html)
 
 ## SCOTCH
 

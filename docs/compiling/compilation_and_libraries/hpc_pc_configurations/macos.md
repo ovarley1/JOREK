@@ -33,7 +33,7 @@ brew install hdf5 --with-fortran --with-mpi
 export PATH="/usr/local/opt/coreutils/libexec/gnubin:$PATH"
 ```
 
-- Compile SCOTCH ([see here](../compiling.md)) with:
+- Compile SCOTCH ([see the main compilation guide](/JOREK/compiling/compilation_and_libraries/compiling.html)) with:
 
 ```makefile
 EXE=
@@ -59,7 +59,7 @@ RANLIB= ranlib
 YACC= bison -pscotchyy -y -b y
 ```
 
-- Compile PaStiX ([see here](../compiling.md)) with:
+- Compile PaStiX ([see the main compilation guide](/JOREK/compiling/compilation_and_libraries/compiling.html)) with:
 
 ```makefile
 HOSTARCH    = i686_mac
@@ -275,7 +275,7 @@ CCFDEB    := $(CCFDEB) $(CCTYPES) $(CCPASTIX)
 # Uncomment if y
 ```
 
-- Compile JOREK ([see here](../compiling.md)) using:
+- Compile JOREK ([see the main compilation guide](/JOREK/compiling/compilation_and_libraries/compiling.html)) using:
 
 ```bash
 CC=gcc-7 make -j8
@@ -288,22 +288,22 @@ See more below. Use the following `Makefile.inc`:
 # model directory
 MODEL = model199
 
-# Fortran compiler 
+# Fortran compiler
 FC     = mpif90
 CC     = mpicc
 CXX    = mpicxx
 
-FFLAGS_OMP       = -fopenmp 
-FFLAGS           = -g -O0 
+FFLAGS_OMP       = -fopenmp
+FFLAGS           = -g -O0
 FFLAGS          := $(FFLAGS) -fdefault-real-8 -fdefault-double-8
 FFLAGS          := $(FFLAGS) -ffree-line-length-none
 FFLAGS          := $(FFLAGS) -x f95-cpp-input
 ## TODO find equivalents of this ifort options
-#FFLAGS          := $(FFLAGS) -traceback -xT -align 
+#FFLAGS          := $(FFLAGS) -traceback -xT -align
 
-FFLAGS_FIXEDFORM = $(FFLAGS) -ffixed-form  -fbounds-check $(FFLAGS_OMP) 
-FFLAGS_NOBOUNDS  = $(FFLAGS) -ffixed-form                 $(FFLAGS_OMP) 
-FFLAGS          := $(FFLAGS)               -fbounds-check $(FFLAGS_OMP) 
+FFLAGS_FIXEDFORM = $(FFLAGS) -ffixed-form  -fbounds-check $(FFLAGS_OMP)
+FFLAGS_NOBOUNDS  = $(FFLAGS) -ffixed-form                 $(FFLAGS_OMP)
+FFLAGS          := $(FFLAGS)               -fbounds-check $(FFLAGS_OMP)
 
 #FFLAGS_NO_OMP   = -fpp -O2 -xT -align
 FFLAGS          := $(FFLAGS) -DMURGE_INTERFACE_MAJOR_VERSION=1 -DMURGE_INTERFACE_MINOR_VERSION=0
@@ -326,7 +326,7 @@ LIB_SCOTCH   = -L$(SCOTCH_HOME)/lib -lscotch -lscotcherr
 INC_SCOTCH   = -I$(SCOTCH_HOME)/include
 
 # MUMPS
-MUMPS_HOME ?= 
+MUMPS_HOME ?=
 LIB_MUMPS  = $(MUMPS_HOME)/lib/libdmumps.a
 LIB_ZMUMPS = $(MUMPS_HOME)/lib/libzmumps.a
 INC_MUMPS  = $(MUMPS_HOME)/include/
@@ -358,7 +358,7 @@ LIBDIERCKX = -L$(DIERCKX_HOME) -ldierckx
 
 #LAPACK
 #LIBLAPACK = -L$(MKL) -lmkl_lapack95_lp64 -lmkl_intel_lp64 -lmkl_sequential -lmkl_core
-#SCALAP    = -L$(MKL) -lmkl_scalapack_lp64 -lmkl_blacs_intelmpi_lp64 
+#SCALAP    = -L$(MKL) -lmkl_scalapack_lp64 -lmkl_blacs_intelmpi_lp64
 
 HDF5_HOME=/usr/local
 HDF5INCLUDE=$(HDF5_HOME)/include
@@ -366,8 +366,8 @@ HDF5LIB=$(HDF5_HOME)/lib/libhdf5hl_fortran.a \
         $(HDF5_HOME)/lib/libhdf5_hl.a        \
         $(HDF5_HOME)/lib/libhdf5_fortran.a   \
         $(HDF5_HOME)/lib/libhdf5.a           \
-        -lz -lsz 
-	
+        -lz -lsz
+
         #$(EBROOTZLIB)/lib/libz.a
 ```
 
