@@ -214,7 +214,7 @@ Do not hard-code `.html` extensions — they will break if the site baseurl chan
 Keep images next to the page that uses them. Create an `assets/` folder in the same directory as the `.md` file, with a subfolder named after the file:
 
 ```
-docs/howto/
+docs/howto/physics_options/physical_terms/
   diamag.md
   assets/
     diamag/

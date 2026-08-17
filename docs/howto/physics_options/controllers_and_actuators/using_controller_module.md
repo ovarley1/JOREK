@@ -1,8 +1,8 @@
 ---
 title: "Use the Controller Module"
-nav_order: 13
-parent: "Physics Options"
-grand_parent: "Howto"
+nav_order: 1
+parent: "Controllers and Actuators"
+grand_parent: "Physics Options"
 layout: default
 render_with_liquid: false
 ---

@@ -58,20 +58,20 @@ render_with_liquid: false
 - Get started with **[JOREK](howto/running_jorek_for_the_first_time.md)**, **[JOREK-STARWALL](howto/running_jorek-starwall_for_the_first_time.md)**, **[JOREK-CARIDDI](howto/running_jorek-cariddi_for_the_first_time.md)** and **[JOREK Diagnostics](howto/introduction_to_jorek_diagnostics.md)**
 - Set up a **[JOREK simulation grid](howto/wallgrid_tutorial.md)**
 - Convert EFIT equilibrium data into JOREK input with **[eqdsk2jorek](howto/eqdsk2jorek.md)**
-- Get **[D_perp and ZK_perp for stationary profiles](howto/diffusion_coef.md)**
-- Check **[energy conservation](howto/energy_conservation.md)**
-- Run with **[diamagnetic drift](howto/diamag.md)** and **[neoclassical effects](howto/neo.md)** and **[include diamagnetic drift in the viscosity term](howto/wdia.md)**
+- Get **[D_perp and ZK_perp for stationary profiles](howto/physics_options/plasma_functions_and_coefficients/diffusion_coef.md)**
+- Check **[energy conservation](diagnostics/energy_conservation.md)**
+- Run with **[diamagnetic drift](howto/physics_options/physical_terms/diamag.md)** and **[neoclassical effects](howto/physics_options/physical_terms/neo.md)** and **[include diamagnetic drift in the viscosity term](howto/physics_options/physical_terms/wdia.md)**
 - Run with **[Taylor-Galerkin Stabilization](howto/tgnum.md)** and **[correct negative densities / temperatures](howto/corr_neg.md)** (workaround)
-- Run with **[RMPs](howto/rmp.md)** (old boundary conditions, without STARWALL)
+- Run with **[RMPs](howto/physics_options/controllers_and_actuators/rmp.md)** (old boundary conditions, without STARWALL)
 - Calculate **B** outside and inside the JOREK grid (**[jorek2_fields_xyz](howto/jorek2_fields_xyz.md)**)
 - Calculate the **[total wall forces](howto/jorek2_wall_forces.md)** (needs JOREK-STARWALL)
-- Run including **[Ohmic heating](howto/ohmic_heating.md)**
-- Run with **[Sheath heat-flux BC](howto/sheath_heatflux_bc.md)**
+- Run including **[Ohmic heating](howto/physics_options/physical_terms/ohmic_heating.md)**
+- Run with **[Sheath heat-flux BC](howto/physics_options/boundary_conditions/sheath_heatflux_bc.md)**
 - Run an **[MGI simulation](howto/mgi_tutorial.md)** and an **[SPI simulation](howto/spi_tutorial.md)**
-- Set up **[Spitzer resistivity](howto/spitzer_resistivity.md)** and anisotropic heat diffusion
+- Set up **[Spitzer resistivity](howto/physics_options/plasma_functions_and_coefficients/spitzer_resistivity.md)** and anisotropic heat diffusion
 - Create an **[X-point plasma from a limiter plasma](howto/x-point_from_limiter.md)**
 - Run with **[mode groups in preconditioner](howto/mode_groups.md)**
-- **[Choose boundary conditions](howto/choose_boundary_conditions.md)**
+- **[Choose boundary conditions](howto/physics_options/boundary_conditions/choose_boundary_conditions.md)**
 - **[How to use shock capturing features](howto/shock_capturing.md)**
 - **[Run stellarator simulations](howto/stellarator_setup.md)**
 - **[Plot equation terms in VTK](howto/plot_rhs_terms.md)**
@@ -80,7 +80,7 @@ render_with_liquid: false
 - **[Assess fluid loads on 3D walls with field line tracing](howto/fluid_wall_load.md)**
 - **[Generate Poincaré plots with the particle tracker](howto/particles_poincare.md)**
 - **[Runaway electron physics in the particle tracker](howto/particles_runaways.md)**
-- **[Use the controller module](howto/using_controller_module.md)**
+- **[Use the controller module](howto/physics_options/controllers_and_actuators/using_controller_module.md)**
 - Run with **[Non-linear time-stepping (Newton iterations)](howto/inexact_newton_solver.md)**
 - **[Reconstruct how namelist input parameters were changed](howto/nml2h5.md)**
 - **[Show time in Paraview plots](howto/showing_time_in_paraview.md)**
@@ -90,7 +90,7 @@ render_with_liquid: false
 - **[Run the stellarator model with the divertor region](howto/stellarator_with_divertor.md)**
 - **[Run with kinetic neutrals and impurities](howto/ncs_ics_tutorial.md)**
 - Run particle simulations with **[neutral neutral collisions](howto/neutral_neutral_collisions.md)**
-- Activate the **[inward pinch term in the density equation](howto/inward_pinch_term.md)**
+- Activate the **[inward pinch term in the density equation](howto/physics_options/physical_terms/inward_pinch_term.md)**
 - **[Computing parallel electric field $E_{\\vert\\vert}$ in JOREK](physics/base_fluid_models/RMHD/expressions_and_derivations/efield_in_jorek.md)**
 - **[Helicity conservation](physics/base_fluid_models/RMHD/expressions_and_derivations/helicity_conservation.md)**
 

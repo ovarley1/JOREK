@@ -1,8 +1,8 @@
 ---
 title: "Choose Boundary Conditions"
-nav_order: 4
-parent: "Physics Options"
-grand_parent: "Howto"
+nav_order: 1
+parent: "Boundary Conditions"
+grand_parent: "Physics Options"
 layout: default
 render_with_liquid: false
 ---
@@ -25,7 +25,7 @@ The JOREK boundary can be separated into different parts, for example the divert
 * **Polar-aligned grid** (grid_flux_surface): "2" for all the boundary
 * **X-point grid** (grid_xpoint): "1" for the divertor targets, "2" for the flux-aligned boundary, "3" for the grid corners
 
-Boundary types > 3 exist for more complex grids. You can check the boundary types that you use with [jorek2_postproc](./post_processing.md) and the command `grid_diagnostics`.
+Boundary types > 3 exist for more complex grids. You can check the boundary types that you use with [jorek2_postproc](/JOREK/howto/post_processing.html) and the command `grid_diagnostics`.
 
 ![xpt_grid_types](./assets/choose_boundary_conditions/xpt_grid_boundary_types.png)
 
@@ -89,9 +89,9 @@ To see all available boundary conditions, see the table below for boundary type 
 
 | Variable | Dirichlet | Natural (bc_natural_open=.t.) | Special | None applied |
 |----------|-----------|-------------------------------|---------|--------------|
-| $\psi$ | `bcs(i)%dirichlet%psi` | None | [free-boundary](../physics/model_extensions/freebound.md) | ? |
+| $\psi$ | `bcs(i)%dirichlet%psi` | None | [free-boundary](/JOREK/physics/model_extensions/freebound.html) | ? |
 | $u$ | `bcs(i)%dirichlet%u` | None | None | ? |
-| $j$ | `bcs(i)%dirichlet%zj` | None | [free-boundary](../physics/model_extensions/freebound.md) | Determined by induction equation |
+| $j$ | `bcs(i)%dirichlet%zj` | None | [free-boundary](/JOREK/physics/model_extensions/freebound.html) | Determined by induction equation |
 | $w$ | `bcs(i)%dirichlet%w` | None | None | ? |
 | $\rho$ | `bcs(i)%dirichlet%rho` | `bcs(i)%natural%rho`<br><br>**Condition**: $D\nabla\rho\cdot\mathbf{n} = -r_\rho\rho\mathbf{v}_\parallel \cdot\mathbf{n}$<br>with $r_\rho$ = density_reflection | None | $\nabla\rho\cdot\mathbf{n}=0$ |
 | $T$ | `bcs(i)%dirichlet%T` | `bcs(i)%natural%T`<br><br>[see here](./sheath_heatflux_bc.md) | None | $\nabla T \cdot\mathbf{n}=0$ |

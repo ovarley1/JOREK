@@ -1,8 +1,8 @@
 ---
 title: "Run with RMPs"
-nav_order: 4
-parent: "Physics Options"
-grand_parent: "Howto"
+nav_order: 2
+parent: "Controllers and Actuators"
+grand_parent: "Physics Options"
 layout: default
 render_with_liquid: false
 ---

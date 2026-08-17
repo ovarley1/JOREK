@@ -148,7 +148,7 @@ render_with_liquid: false
 | **gamma_Newton** | 0.5 | Newton gamma-parameter: gmres_tol = gamma_Newton*(normRHScurrent/normRHSprevious)**alpha_Newton |  |  | x | x | x | x | x |  |
 | **alpha_Newton** | 2. | Newton alpha-parameter: gmres_tol = gamma_Newton*(normRHScurrent/normRHSprevious)**alpha_Newton |  |  | x | x | x | x | x |  |
 | **strumpack_matching** | .false. | Perform maximum-diagonal-product reordering algorithm in STRUMPACK solver (improves direct solver, but use matrix centralization) |  |  | x | x | x | x | x | x |
-| **bcs** | see [its wiki page](/docs/howto/choose_boundary_conditions.md) |  |  |  |  |  |  |  |  |  |
+| **bcs** | see [its documentation page](/JOREK/howto/physics_options/boundary_conditions/choose_boundary_conditions.html) |  |  |  |  |  |  |  |  |  |
 | **n_limiter** | 0 | Number of limiter points | x | x | x | x | x | x | x | x |
 | **R_limiter** | 0. | R-positions of the limiter points | x | x | x | x | x | x | x | x |
 | **Z_limiter** | 0. | Z-positions of the limiter points | x | x | x | x | x | x | x | x |

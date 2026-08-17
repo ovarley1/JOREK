@@ -1,8 +1,8 @@
 ---
 title: "Include Diamagnetic Drift in Viscosity"
-nav_order: 3
-parent: "Physics Options"
-grand_parent: "Howto"
+nav_order: 2
+parent: "Activation of Physical Terms"
+grand_parent: "Physics Options"
 layout: default
 render_with_liquid: false
 ---

@@ -1,8 +1,8 @@
 ---
 title: "Run with Ohmic Heating"
-nav_order: 5
-parent: "Physics Options"
-grand_parent: "Howto"
+nav_order: 4
+parent: "Activation of Physical Terms"
+grand_parent: "Physics Options"
 layout: default
 render_with_liquid: false
 ---
@@ -28,7 +28,7 @@ T_max_eta_ohm = 1.d99
 ```
 
 `eta_ohmic` is the resistivity value, in JOREK units, at the equilibrium plasma core that is used in the Ohmic heating term. 
-Any temperature dependence for the resistivity `eta` is automatically replicated for `eta_ohmic`. The parameters used to setup the ohmic heating resistivity are analogous to that of the [$\eta$ term in the equation for the electric field](./spitzer_resistivity.md) (just the suffix "_ohmic" is added). Whenever `eta` differs from `eta_ohmic`, a warning message will appear, since in this case the magnetic energy is not properly transformed into thermal energy.
+Any temperature dependence for the resistivity `eta` is automatically replicated for `eta_ohmic`. The parameters used to setup the ohmic heating resistivity are analogous to that of the [$\eta$ term in the equation for the electric field](/JOREK/howto/physics_options/plasma_functions_and_coefficients/spitzer_resistivity.html) (just the suffix "_ohmic" is added). Whenever `eta` differs from `eta_ohmic`, a warning message will appear, since in this case the magnetic energy is not properly transformed into thermal energy.
 
 
 ## Models 710/711/712

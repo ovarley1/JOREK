@@ -1,8 +1,7 @@
 ---
 title: "Check Energy Conservation"
-nav_order: 8
-parent: "Physics Options"
-grand_parent: "Howto"
+nav_order: 2
+parent: "Diagnostics and post-processing"
 layout: default
 render_with_liquid: false
 ---

@@ -1,8 +1,8 @@
 ---
 title: "Run with Diamagnetic Drift"
 nav_order: 1
-parent: "Physics Options"
-grand_parent: "Howto"
+parent: "Activation of Physical Terms"
+grand_parent: "Physics Options"
 layout: default
 render_with_liquid: false
 ---

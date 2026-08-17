@@ -100,7 +100,7 @@ which are labelled as
 \textrm{"qn-perp"} &\equiv  \int_S  \frac{\mathbf{q}_{\perp}\cdot\mathbf{n}}{\gamma-1}dS   
 \end{align}
 
-Note that if you set sheath boundary conditions in all the boundary of the domain (**not just the divertor**), the sum of the 4 previous fluxes corresponds to the energy flowing through the sheath and the formula provided by Stangeby (see [Running with sheath boundary conditions for the heat-flux](sheath_heatflux_bc.md)).
+Note that if you set sheath boundary conditions in all the boundary of the domain (**not just the divertor**), the sum of the 4 previous fluxes corresponds to the energy flowing through the sheath and the formula provided by Stangeby (see [Running with sheath boundary conditions for the heat-flux](/JOREK/howto/physics_options/boundary_conditions/sheath_heatflux_bc.html)).
 
 The Poynting flux is typically 0 in fixed boundary simulations (see next section on magnetic energy conservation how to plot it.)
 

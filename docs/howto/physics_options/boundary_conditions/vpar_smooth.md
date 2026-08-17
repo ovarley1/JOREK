@@ -1,8 +1,8 @@
 ---
 title: "Vpar smoothing at grazing angles"
-nav_order: 1
-parent: "Physics Options"
-grand_parent: "Howto"
+nav_order: 3
+parent: "Boundary Conditions"
+grand_parent: "Physics Options"
 layout: default
 render_with_liquid: false
 ---
