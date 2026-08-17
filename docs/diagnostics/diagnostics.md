@@ -34,6 +34,7 @@ There are a lot of diagnostics available for JOREK. Some of the most important:
 | **[radiation\_function\_diagno](radiation_function_diagno.md)** | Output the radiation power function for the hard-coded impurity under hard-coded parameters |
 | **[jorek2\_fieldlines\_vtk\_newdiag](jorek2_fieldlines_vtk_newdiag.md)** | This diagnostic evaluates arbitrary physical expressions (using the new_diag framework) along field lines and writes this information to both vtk and txt files |
 | **[jorek2\_solcurrent](jorek2_solcurrent.md)** | This diagnostic postprocesses `jorek_restart.h5` to determine scrape-off layer currents (thermo-electric current between target plates) by solving [Stangeby](https://doi.org/10.1201/9780367801489) eq. 17.29 |
+| **[fluid_loads_on_3D_wall](fluid_wall_load.html)** | Calculates fluid fluxes (heat and current loads) on a 3D thin walls discretized with triangles as explained in [ArtolaNF2026](https://iopscience.iop.org/article/10.1088/1741-4326/ae80e3)  |
 | **[free-boundary diagnostics](/physics/model_extensions/freebound/freebnd_tools.md)** | Here you can find diagnostics related to the free-boundary extension, such as the calculation of the B-field outside the grid and the computation of wall forces |
 
 The diagnostics tools should have been compiled with the same hard-coded parameters as JOREK.
