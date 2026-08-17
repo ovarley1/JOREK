@@ -2,7 +2,7 @@
 title: "Macroscopic_vars.dat"
 nav_order: 25
 render_with_liquid: false
-parent: "Physics Models"
+parent: "Diagnostics and post-processing"
 ---
 
 This file contains the energies and growth rates at specific time steps in the simulation, and can be used to plot the variation of these quantities in time with the [plot_live_data.sh](plot_live_data.sh.md) script.
