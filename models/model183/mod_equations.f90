@@ -143,14 +143,14 @@ module mod_equations
   type(algexpr), parameter, private :: zero       = algexpr(basic=.true., var=var_zero)
 
   type(const), private :: tstep, zeta, theta 
-  type(const), private :: visco_num, visco_par, visco_par_par, visco_par_num, nu_phi_source, eta_num, D_perp_num, k_perp_num, gamma, reta
+  type(const), private :: visco_num, visco_par, visco_par_par, visco_par_num, nu_phi_source, eta_num, D_perp_num, k_perp_num, gamma, reta, tauIC
   
   type(algexpr), public  :: rhs_semianalytic(n_var)
   type(algexpr), public  :: amat_semianalytic(n_var, n_var)
   type(algexpr), private :: a_Bv2, a_B2
   type(algexpr), private :: B2_psi
   type(algexpr), private :: v2, v2_Psi, v2_Phi, v2_vpar, vpar2, vpar2_Psi, vpar2_Phi, vpar2_vpar
-  type(algexpr), private :: div_rhov0, div_rhov_Psi, div_rhov_Phi, div_rhov_rho, div_rhov_vpar
+  type(algexpr), private :: div_rhov0, div_rhov_Psi, div_rhov_Phi, div_rhov_rho, div_rhov_vpar, div_rhov_Ti, div_rhov_T
 
   integer, parameter :: n_aux  = 5
   
@@ -190,6 +190,7 @@ module mod_equations
     D_perp_num       = const(value = ID_perp_num,       token = "D_perp_num"   )
     k_perp_num       = const(value = zk_perp_num,       token = "zk_perp_num"  )
     gamma            = const(value = Igamma,            token = "gamma"        )
+    tauIC            = const(value = 1.605d-2,          token = "tauIC"        )    ! Diamagnetic drift constant - value for deuterium plasma with n0=1.d20
     if (Ieta .ne. 0.d0) then
       reta           = const(value = eta_ohmic/Ieta,  token = "reta")
     else
@@ -233,6 +234,15 @@ module mod_equations
     div_rhov_Phi  = Bv_pbrack(rho0/Bv2,Phi)
     div_rhov_rho  = Bv_pbrack(rho/Bv2, Phi0) + Bv_parderiv(rho*vpar0) + Bv_pbrack(rho*vpar0, Psi0)
     div_rhov_vpar = Bv_parderiv(rho0*vpar) + Bv_pbrack(rho0*vpar, Psi0)
+#ifdef with_TiTe
+    div_rhov0     = div_rhov0    - tauIC*Bv_pbrack(rho0*T0_i, Bv2)/(Bv2*Bv2)
+    div_rhov_rho  = div_rhov_rho - tauIC*Bv_pbrack(rho*T0_i, Bv2)/(Bv2*Bv2)
+    div_rhov_Ti   =              - tauIC*Bv_pbrack(rho0*T_i, Bv2)/(Bv2*Bv2)
+#else
+    div_rhov0     = div_rhov0    - tauIC*Bv_pbrack(rho0*T0, Bv2)/(Bv2*Bv2)*0.5d0
+    div_rhov_rho  = div_rhov_rho - tauIC*Bv_pbrack(rho*T0, Bv2)/(Bv2*Bv2)*0.5d0
+    div_rhov_T    =              - tauIC*Bv_pbrack(rho0*T, Bv2)/(Bv2*Bv2)*0.5d0
+#endif
 
     !###################################################################################################
     !#  Induction Equation                                                                             #
@@ -260,25 +270,26 @@ module mod_equations
     !#  Missing terms:                                                                                 #
     !#     - d(v_par B)_dt:       change in parallel momentum                                          #
     !#     - v_par div(rho v)                                                                          #
+    !#     - v_par d(rho)_dt                                                                           #
     !#     - rho omega x v_par                                                                         #
     !###################################################################################################
-    rhs_semianalytic(var_Phi) = -tstep*(Bv_pbrack(rho0/Bv2,v)*v2/2.d0                   &            ! 1/2 rho grad(v^2)  
-                              - (Bv_pbrack(v,Phi0)*rho0*w0/Bv2                          &            ! rho omega x v_ExB
-                              + div_rhov0*inprod(v,Phi0))/Bv2                           &            ! v_ExB div(rho v)
-                              - v*Bv_parderiv(zj0)                                      &            ! j x B component
-                              - v*Bv_pbrack(zj0,Psi0)                                   &            ! j x B component
-                              + visco*inprod(v,w0)                                      &            ! Ad-hoc viscous tensor
+    rhs_semianalytic(var_Phi) = -tstep*(Bv_pbrack(rho0/Bv2,v)*v2/2.d0                   &            ! 1/2 rho grad(v^2)  4
+                              - (Bv_pbrack(v,Phi0)*rho0*w0/Bv2                          &            ! rho omega x v_ExB  5 (I have /Bv2^2)
+                              + div_rhov0*inprod(v,Phi0))/Bv2                           &            ! v_ExB div(rho v) 3
+                              - v*Bv_parderiv(zj0)                                      &            ! j x B component  6
+                              - v*Bv_pbrack(zj0,Psi0)                                   &            ! j x B component  7
+                              + visco*inprod(v,w0)                                      &            ! Ad-hoc viscous tensor 9
                               + visco_num*Lap(v)*Lap(w0)                                &            ! Hyper viscosity
                               + nu_phi_source*rho0/Bv2*inprod(v,S_phi_pol - Phi0_pol))  &            ! Ad-hoc poloidal momentum source
-                              - zeta*(rho0*inprod(v,delta_Phi)                          &            ! rho d(v_ExB)_dt
-                              + delta_rho*inprod(v,Phi0))/Bv2                                        ! v_ExB d(rho)_dt
+                              - zeta*(rho0*inprod(v,delta_Phi)                          &            ! rho d(v_ExB)_dt 2
+                              + delta_rho*inprod(v,Phi0))/Bv2                                        ! v_ExB d(rho)_dt 1
                                                                                                      
     if (with_TiTe) then                                                                              
       rhs_semianalytic(var_Phi) = rhs_semianalytic(var_Phi)                             &            
                                 -tstep * Bv_pbrack(v,rho0*(T0_i+T0_e))/Bv2                           ! grad(p) component
     else                                                                                             
       rhs_semianalytic(var_Phi) = rhs_semianalytic(var_Phi)                             &            
-                                  -tstep * Bv_pbrack(v,rho0*T0)/Bv2                                  ! grad(p) component
+                                  -tstep * Bv_pbrack(v,rho0*T0)/Bv2                                  ! grad(p) component  8
     end if                                                                                           
                                                                                                      
     amat_semianalytic(var_Phi, var_Psi) = tstep*theta*(Bv_pbrack(rho0/Bv2,v)*v2_Psi/2.d0      &      ! 1/2 rho grad(v^2)
@@ -363,6 +374,12 @@ module mod_equations
     if (with_vpar) then
       amat_semianalytic(var_rho, var_vpar) = tstep*theta*v*div_rhov_vpar                              ! div(rho v)
     endif
+
+#ifdef WITH_TiTe
+    amat_semianalytic(var_rho, var_Ti)  = tstep*theta*v*div_rhov_Ti                                   ! div(rho v)
+#else
+    amat_semianalytic(var_rho, var_T)  = tstep*theta*v*div_rhov_T                                     ! div(rho v)
+#endif
 
     !###################################################################################################
     !#  Pressure Equation                                                                              #
@@ -472,20 +489,21 @@ module mod_equations
     !#      - rho inprod(Psi, dPhi_dt)                                                                 #
     !#      - rho omega x v                                                                            #
     !#      - v_ExB div(rho v)                                                                         #
+    !#      - v_ExB d(rho)_dt                                                                          #
     !#                                                                                                 #
     !#    Comments:                                                                                    #
     !#      - hyper-viscosity seems to be destabilising                                                #
     !###################################################################################################
     if (with_vpar) then
-      rhs_semianalytic(var_vpar) = tstep*(vpar2/2.0 * Bv_parderiv(v*rho0)                                     &     ! 1/2 rho grad(v^2)
-                                 - vpar2*Bv_pbrack(Psi0, rho0*v)/2.0                                          &     ! 1/2 rho grad(v^2)
-                                 - v*div_rhov0*vpar0*B2                                                       &     ! vpar div(rho v)
-                                 - visco_par*gradprod(v, vpar0)                                               &     ! ad-hoc parallel viscosity
+      rhs_semianalytic(var_vpar) = tstep*(vpar2/2.0 * Bv_parderiv(v*rho0)                                     &     ! 1/2 rho grad(v^2)  6
+                                 - vpar2*Bv_pbrack(Psi0, rho0*v)/2.0                                          &     ! 1/2 rho grad(v^2)  7
+                                 - v*div_rhov0*vpar0*B2                                                       &     ! vpar div(rho v)  4
+                                 - visco_par*gradprod(v, vpar0)                                               &     ! ad-hoc parallel viscosity  10
                                  - (visco_par_par-visco_par)*B0_parderiv(v)*B0_parderiv(vpar0)/B2             &     ! ad-hoc parallel viscosity
                                  - visco_par_num*Lap(v)*Lap(vpar0))                                           &     ! ad-hoc parallel hyper viscosity
-                                 + zeta*v*B2*rho0*delta_vpar                                                  &     ! rho B2 d(vpar)_dt
-                                 + zeta*v*B2*delta_rho*vpar0                                                  &     ! vpar B2 d(rho)_dt
-                                 + zeta*v*Bv2*inprod(Psi0,delta_Psi)*rho0*vpar0                                     ! 1/2 rho vpar d(B2)_dt
+                                 + zeta*v*B2*rho0*delta_vpar                                                  &     ! rho B2 d(vpar)_dt  1
+                                 + zeta*v*B2*delta_rho*vpar0                                                  &     ! vpar B2 d(rho)_dt  3
+                                 + zeta*v*Bv2*inprod(Psi0,delta_Psi)*rho0*vpar0                                     ! 1/2 rho vpar d(B2)_dt  2
 
                                                                                                               
       amat_semianalytic(var_vpar, var_Psi)  = (1.0 + zeta)*v*B2_psi*rho0*vpar0/2.0                            &     ! 1/2 rho vpar d(B2)_dt
@@ -533,8 +551,8 @@ module mod_equations
                                              + v*Bv_pbrack(rho0*T_e,Psi0))                                   ! grad(p) component
       else                                                                                                      
          rhs_semianalytic(var_vpar) = rhs_semianalytic(var_vpar)                                              &            
-                                    - tstep * (v*Bv_parderiv(rho0*T0)                                         &     ! grad(p) component
-                                    + v*Bv_pbrack(rho0*T0,Psi0))                                                    ! grad(p) component
+                                    - tstep * (v*Bv_parderiv(rho0*T0)                                         &     ! grad(p) component  8
+                                    + v*Bv_pbrack(rho0*T0,Psi0))                                                    ! grad(p) component  9 ! Why the sign change???!!!
                                                                                                               
          amat_semianalytic(var_vpar, var_Psi) = amat_semianalytic(var_vpar, var_Psi)                          &   
                                               + tstep*theta*(v*Bv_pbrack(rho0*T0,Psi))                              ! grad(p) component
