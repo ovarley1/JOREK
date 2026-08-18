@@ -21,7 +21,7 @@ git clone git@github.com:iterorganization/JOREK.git
 cd JOREK
 ```
 
-The main development branch is `develop`. Note that all contributions have to be done via forks, see link below.
+The main development branch is `develop`. Note that all developments have to be performed in forks, more infos in the link below.
 
 ## Contributing and Issues
 
