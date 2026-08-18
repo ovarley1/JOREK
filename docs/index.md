@@ -86,7 +86,6 @@ render_with_liquid: false
 - **[Show time in Paraview plots](howto/showing_time_in_paraview.md)**
 - **[Variable MultiScale (VMS) Stabilization in full MHD model 750](howto/vms.md)**
 - Compile and run the **[Particle Fast Camera](howto/particle_fast_camera.md)**
-- **[Compress the response matrices](howto/compress_response_matrices.md)** in the free-boundary and resistive wall extension
 - **[Run the stellarator model with the divertor region](howto/stellarator_with_divertor.md)**
 - **[Run with kinetic neutrals and impurities](howto/ncs_ics_tutorial.md)**
 - Run particle simulations with **[neutral neutral collisions](howto/neutral_neutral_collisions.md)**
