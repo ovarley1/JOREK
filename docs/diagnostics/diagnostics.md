@@ -15,7 +15,7 @@ There are a lot of diagnostics available for JOREK. Some of the most important:
 
 | Program | Description |
 | :--- | :--- |
-| **[jorek2vtk(_3d)](/JOREK/howto/introduction_to_jorek_diagnostics.html#jorek2vtk)** | Convert `jorek_restart.rst` files to VTK files |
+| **[jorek2vtk(_3d)](/JOREK/howto/introduction_to_jorek_diagnostics.html#jorek2vtk)** | Convert `jorek_restart.h5` files to VTK files |
 | **[jorek\_read\_h5](jorek_read_h5.html)** | Python script for reading HDF5 files to VTK objects and files |
 | **[jorek2vtk\_gaussvortterms](/JOREK/howto/introduction_to_jorek_diagnostics.html#beyond)** | Calculates the different terms of the vorticity equation integrated in the Gaussian points and creates a VTK file where the different terms can be visualized in the poloidal plane. |
 | **[jorek2\_four](jorek2_four.html)** | Perform a two-dimensional Fourier analysis of the `jorek_restart.rst` file |
