@@ -22,7 +22,7 @@ render_with_liquid: false
 | Poloidal magnetic flux | $\Psi_{SI}[Tm^{2}]$ | $=\Psi$ | Poloidal magnetic flux |
 | Toroidal current density | $j_{\phi,SI}[Am^{-2}]$ | $=-j/(R~\mu_{0})$ | Toroidal current density; $j_{\phi,SI}=j_{SI}\cdot\hat{e}_{\phi}$ |
 | Runaway electron number density | $n_{r,SI}[m^{-3}]$ | $=n_{r}(\frac{1}{eR})\sqrt{\frac{\rho_{0}}{\mu_{0}}}$ | Runaway electron number density |
-| Runaway electron parallel momentum | $P_{||,SI}[kg~m~s^{-1}]$ | $=P_{||}m_{e0}c$ | Runaway electron parallel momentum |
+| Runaway electron parallel momentum | $P_{\parallel,SI}[kg~m~s^{-1}]$ | $=P_{\parallel}m_{e0}c$ | Runaway electron parallel momentum |
 | Particle density | $n_{SI}[m^{-3}]$ | $=\rho~n_{0}$ | Particle density ($\rho$ is the normalized density profile, which should be given as an input) |
 | Impurity number density | $n_{imp,SI}[m^{-3}]$ | $=\rho_{imp}$ No $n_{imp}$ | Impurity number density |
 | Mass density | $\rho_{SI}[kg~m^{-3}]$ | $=\rho~\rho_{0}$ | Mass density = ion mass X particle density |
@@ -32,7 +32,7 @@ render_with_liquid: false
 | Poloidal current stream function | $FF_{SI}^{\prime}[T^{2}m^{2}/(Weber/rad)]$ | $=FF^{\prime}$ | Poloidal current stream function $F=RB_{\phi}$ ${}^{\prime}=d/d\psi$ |
 | Plasma pressure | $p_{SI}[Nm^{-2}]$ | $=\rho~T/\mu_{0}$ | Plasma pressure |
 | Velocity vector | $v_{SI}[ms^{-1}]$ | $=v/\sqrt{\mu_{0}\rho_{0}}$ | Velocity vector |
-| Parallel velocity component | $v_{||,SI}[ms^{-1}]$ | $=v_{||}\cdot B_{SI}/\sqrt{\mu_{0}\rho_{0}}$ | Parallel velocity component, where $B_{SI}=|B_{SI}|$ |
+| Parallel velocity component | $v_{\parallel,SI}[ms^{-1}]$ | $=v_{\parallel}\cdot B_{SI}/\sqrt{\mu_{0}\rho_{0}}$ | Parallel velocity component, where $B_{SI}=\vert B_{SI}\vert $ |
 | Velocity stream function | $u_{SI}[ms^{-1}]$ | $=u/\sqrt{\mu_{0}\rho_{0}}$ | $Ru$ is the velocity stream function, $F_0 u$ is the potential |
 | Toroidal vorticity | $\omega_{\phi,SI}[m^{-1}s^{-1}]$ | $=\omega/\sqrt{\mu_{0}\rho_{0}}$ | Toroidal vorticity |
 | Time | $t_{SI}[s]$ | $=t\cdot\sqrt{\mu_{0}\rho_{0}}$ | Time |
@@ -42,8 +42,8 @@ render_with_liquid: false
 | Dynamic viscosity | $\mu_{SI} [kg~m^{-1}s^{-1}]$ | $=\mu\cdot\sqrt{\rho_{0}/\mu_{0}}$ | Dynamic viscosity |
 | Hyper-viscosity | $\mu_{num,SI}[kg~ms^{-1}]$ | $=\mu_{num}\cdot\sqrt{\rho_{0}/\mu_{0}}$ | Hyper-viscosity |
 | Kinematic viscosity | $\nu_{SI}[m^{2}s^{-1}]$ | $=\mu_{SI}/\rho_{SI}$ | Kinematic viscosity ($\rho_{SI}$ is the local mass density in $kg~m^{-3}$) |
-| Particle diffusivity | $D_{SI}[m^{2}s^{-1}]$ | $=D/\sqrt{\mu_{0}\rho_{0}}$ | Particle diffusivity (|| or $\perp$); Usually, $D_{||}=0$ |
-| Heat diffusivity | $K_{SI}[kg~m^{-1}s^{-1}]$ | $=K\cdot\sqrt{\rho_{0}/\mu_{0}}/(\gamma-1)$ | Heat diffusivity (|| or $\perp$), where $\chi_{SI} [m^{2}s^{-1}]=K_{SI}/\rho_{SI}$ and $K_{SI} [m^{-1}s^{-1}]=n_{SI}\chi_{SI}$ |
+| Particle diffusivity | $D_{SI}[m^{2}s^{-1}]$ | $=D/\sqrt{\mu_{0}\rho_{0}}$ | Particle diffusivity (\parallel or $\perp$); Usually, $D_{\parallel}=0$ |
+| Heat diffusivity | $K_{SI}[kg~m^{-1}s^{-1}]$ | $=K\cdot\sqrt{\rho_{0}/\mu_{0}}/(\gamma-1)$ | Heat diffusivity (\parallel or $\perp$), where $\chi_{SI} [m^{2}s^{-1}]=K_{SI}/\rho_{SI}$ and $K_{SI} [m^{-1}s^{-1}]=n_{SI}\chi_{SI}$ |
 | Heat source | $S_{T,SI}[Wm^{-3}]$ | $=S_{T}/((\gamma-1)\mu_{0}\sqrt{\mu_{0}\rho_{0}})$ | Heat source |
 | Particle source | $S_{\rho,SI}[kg~s^{-1}m^{-3}]$ | $=S_{\rho}\cdot\sqrt{\rho_{0}/\mu_{0}}$ | Particle source |
 | Wall resistivity | $\eta_{wall,thin,SI} [\Omega]$ | $=\eta_{wall,thin}\cdot\sqrt{\mu_{0}/\rho_{0}}$ | Wall resistivity (relevant for JOREK-STARWALL); $\eta_{wall,thin,SI} [\Omega] = \eta_{wall,SI} [\Omega m] / d_{wall} [m]$. Example ITER: $8\cdot10^{-7}\Omega m / (6cm) = 1.33\cdot10^{-5}\Omega$ |
