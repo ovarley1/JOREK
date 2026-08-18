@@ -117,6 +117,7 @@ contains
     ! reinitialise the storage node_list to ensure all projections fit
     do i=1, this%node_list%n_nodes
       call init_node(this%node_list%node(i), n_rhs_f+n_rhs)
+      this%node_list%node(i)%values(:,:,:) = 0.d0
     enddo
 
     n_tor_local = this%n_tor_local
