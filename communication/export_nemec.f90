@@ -28,10 +28,10 @@ subroutine export_nemec(node_list, element_list, xpoint, xcase)
   integer :: i, i_elm_xpoint(2), i_elm_axis, ifail
   real*8  :: R_xpoint(2), Z_xpoint(2), s_xpoint(2), t_xpoint(2), psi_xpoint(2), psi_bnd
   real*8  :: psi_axis, R_axis, Z_axis, s_axis, t_axis
-  real*8, allocatable :: q(:), rad(:), PhiN(:)
+  real*8, allocatable :: q(:), rad(:), PhiN(:), Itor(:), Area(:), Qheat(:), Area_q(:)
   integer :: nplot, j, k, i_elm, node1, node2, node3, node4, ip
   real*8  :: rr1, drr1, rr2, drr2, ss1, dss1, ss2, dss2, t, ri, dri, si, dsi
-  real*8  :: R,Z
+  real*8  :: R,Z, psi_max, psin_tmp
   
   write(*,*) 'BEGIN: export_nemec'
   
@@ -50,11 +50,13 @@ subroutine export_nemec(node_list, element_list, xpoint, xcase)
   endif
   
   ! --- Find flux surfaces
-  surface_list%n_psi = 400
+  surface_list%n_psi = 100 ! 400
+  psi_max  = psi_axis + 0.995 * (psi_bnd - psi_axis)
   call tr_allocate(surface_list%psi_values,1,surface_list%n_psi,"surface_list%psi_values",CAT_GRID)
   do i = 1, surface_list%n_psi
-    surface_list%psi_values(i) = (float(i)/float(surface_list%n_psi))**2 * (psi_bnd - psi_axis)    &
-      + psi_axis
+    surface_list%psi_values(i) = (float(i)/float(surface_list%n_psi)) * (psi_max - psi_axis)     + psi_axis
+    !surface_list%psi_values(i) = (float(i)/float(surface_list%n_psi))**2 * (psi_max - psi_axis)     + psi_axis
+    !surface_list%psi_values(i) = (float(i-1)/float(surface_list%n_psi-1))**2 * (psi_max - psi_axis)     + psi_axis
   enddo
   call find_flux_surfaces(0,xpoint,xcase,node_list,element_list,surface_list)
   
@@ -62,10 +64,41 @@ subroutine export_nemec(node_list, element_list, xpoint, xcase)
   call tr_allocate(q,1,surface_list%n_psi,"q",CAT_GRID)
   call tr_allocate(rad,1,surface_list%n_psi,"rad",CAT_GRID)
   call determine_q_profile(node_list,element_list,surface_list,psi_axis,psi_xpoint,Z_xpoint,q,rad)
+
+  ! --- Determine the Itor-profile.
+  call tr_allocate(Itor,1,surface_list%n_psi,"Itor",CAT_GRID)
+  call tr_allocate(Area,1,surface_list%n_psi,"Area",CAT_GRID)
+  call determine_Itor_profile(node_list,element_list,surface_list,psi_axis,psi_xpoint,Z_xpoint,Itor,Area)
   
+  ! --- Determine the Qperp_heat-profile.
+  call tr_allocate(Qheat,1,surface_list%n_psi,"Qheat",CAT_GRID)
+  call tr_allocate(Area_q,1,surface_list%n_psi,"Area_q",CAT_GRID)
+  call determine_heatflux_profile(node_list,element_list,surface_list,psi_axis,psi_xpoint,Z_xpoint,Qheat,Area_q)
+ 
+  ! --- Write out the qperp_heat profile for NEMEC.
+  write(*,*) 'Writing qperp_heat file.'
+  open(42, file='qperp_heat.dat', action='write', status='replace', form='formatted')
+  write(42,*) 'qperp_heat profile written by JOREK routine export_nemec'
+  do i = 1, surface_list%n_psi
+    psin_tmp = (surface_list%psi_values(i)-psi_axis)/(psi_xpoint(1)-psi_axis)
+    write(42,*) psin_tmp, Qheat(i), Area_q(i)
+  end do
+  close(42)
+ 
+
   ! --- Determine the toroidal flux.
   call tr_allocate(PhiN,1,surface_list%n_psi,"PhiN",CAT_GRID)
   call determine_PhiN(surface_list, q, PhiN, Phi_edge)
+  
+  ! --- Write out the mapping from PsiN to PhiN.
+  write(*,*) 'Writing mapping file file.'
+  open(42, file='mapping_psin_phin', action='write', status='replace', form='formatted')
+  write(42,111) '#phiedge       = ', -2.d0 * pi * Phi_edge, ','
+  do i = 1, surface_list%n_psi
+    psin_tmp = (surface_list%psi_values(i)-psi_axis)/(psi_xpoint(1)-psi_axis)
+    write(42,'(3es15.7)') psin_tmp, surface_list%psi_values(i), PhiN(i)
+  end do
+  close(42)
   
   ! --- Write out the iota profile for NEMEC.
   write(*,*) 'Writing iota-for-nemec file.'
@@ -77,6 +110,19 @@ subroutine export_nemec(node_list, element_list, xpoint, xcase)
   write(42,*) surface_list%n_psi
   do i = 1, surface_list%n_psi
     write(42,*) PhiN(i), 1.d0/q(i)
+  end do
+  close(42)
+ 
+  ! --- Write out the itor profile for NEMEC.
+  write(*,*) 'Writing itor-for-nemec file.'
+  open(42, file='itor-for-nemec', action='write', status='replace', form='formatted')
+  write(42,*) 'itor profile written by JOREK routine export_nemec'
+  write(42,*) 'ditor1   ditor2    iorspli'
+  write(42,*) '0.0      0.0        0'
+  write(42,*) 'nitoru'
+  write(42,*) surface_list%n_psi
+  do i = 1, surface_list%n_psi
+    write(42,*) PhiN(i), Itor(i)
   end do
   close(42)
   
@@ -113,12 +159,13 @@ subroutine export_nemec(node_list, element_list, xpoint, xcase)
   write(42,111) 'raxis_co(0)   = ', R_axis, ','
   write(42,111) 'zaxis_co(0)   = ', Z_axis, ','
   close(42)
-  
+   
   ! --- Write out the lcms points for DESCUR.
   j = surface_list%n_psi
   nplot = 6
   write(*,*) 'Writing lcms-for-descur file.'
   open(42, file='lcms-for-descur', action='write', status='replace', form='formatted')
+  open(43, file='lcms-for-RZpsi_bnd', action='write', status='replace', form='formatted')
   112 format(1x,i5,a)
   write(42,*) 'ntheta  nphi   nfp  isymm  isort     (written by JOREK routine export_nemec)'
   write(42,112) surface_list%flux_surfaces(j)%n_pieces*(nplot-1), '     1     1      1      1'
@@ -151,13 +198,16 @@ subroutine export_nemec(node_list, element_list, xpoint, xcase)
       
       call interp_RZ(node_list,element_list,i_elm,ri,si,R,Z)
       
-      write(42,'(2es15.7)') R, Z
+      if( ( ES%active_xpoint .eq. LOWER_XPOINT ) .and. ( Z > Z_xpoint(1)) ) then
+        write(42,'(2es15.7)') R, Z
+        write(43,'(3es15.7)') R, Z, surface_list%psi_values(j)
+      end if
       
     end do
     
   end do
-  close(42)
-  
+  close(42) 
+ 
   call tr_deallocate(q, "q",CAT_GRID)
   call tr_deallocate(rad, "rad",CAT_GRID)
   call tr_deallocate(PhiN, "PhiN",CAT_GRID)
