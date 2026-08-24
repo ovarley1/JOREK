@@ -206,6 +206,7 @@ module mod_equations
     B2_psi = 2.d0*Bv2*inprod(Psi0,Psi)
 
     ! Magnitude of the total velocity squared used in poloidal and parallel momentum equation
+    ! WARNING: This doesn't include diamagnetic drift terms, as gyroviscous cancellation leads to (v-v_*)^2 in the momentum equation.
 #if INCLUDE_ADDITIONAL_TERMS
     v2      = inprod(Phi0,Phi0)/Bv2 + 2.d0*vpar0*inprod(Phi0,Psi0) + vpar0*vpar0*(Bv2*(1.d0 + inprod(Psi0,Psi0)))
     v2_Psi  = 2.d0*vpar0*inprod(Phi0, Psi) + 2.d0*vpar0*vpar0*(Bv2*inprod(Psi0,Psi))
