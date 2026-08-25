@@ -239,6 +239,7 @@ module mod_equations
     !###################################################################################################
     rhs_semianalytic(var_Psi) = tstep*v*((Bv_parderiv(Phi0) - Bv_pbrack(Psi0,Phi0))/Bv2     &       ! v x B ideal component
                               + eta*(zj0 - S_j))                                            &       ! Resistivity and current source
+                              ! + tstep*eta_num*inprod(v,zj0)*R                               &       ! Hyper resistivity
                               + tstep*eta_num*inprod(v,zj0)                                 &       ! Hyper resistivity
                               + zeta*v*delta_Psi                                                    ! dPsi_dt
                                                                                                     
@@ -247,6 +248,7 @@ module mod_equations
     amat_semianalytic(var_Psi, var_Phi) = (-tstep*theta)*v*(Bv_parderiv(Phi)                &       ! v x B ideal component
                                         - Bv_pbrack(Psi0,Phi))/Bv2                                  ! v x B ideal component
     amat_semianalytic(var_Psi, var_zj ) = (-tstep*theta)*(eta*v*zj                          &       ! Resistivity and current source
+                                        ! + eta_num*inprod(v,zj)*R)                                    ! Hyper resistivity
                                         + eta_num*inprod(v,zj))                                     ! Hyper resistivity
     if (with_TiTe) then                                                                             
       amat_semianalytic(var_Psi, var_Te) = (-tstep*theta)*v*deta_dT*T_e*(zj0 - S_j)                 ! Resistivity and current source
