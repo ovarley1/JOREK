@@ -44,6 +44,10 @@ real*8     :: R_axis, Z_axis, psi_axis, psi_bnd, R_xpoint(2), Z_xpoint(2), dj_dp
 real*8     :: Bgrad_rho_star,     Bgrad_rho,     Bgrad_T_star,  Bgrad_T, BB2
 real*8     :: Bgrad_rho_star_psi, Bgrad_rho_psi, Bgrad_rho_rho, Bgrad_T_star_psi, Bgrad_T_psi, Bgrad_T_T, BB2_psi
 real*8     :: Bgrad_rho_rho_n, Bgrad_T_T_n, Bgrad_rho_k_star, Bgrad_T_k_star
+! --- Density-weighted heat conduction (see comment at the definition of vc_x below)
+real*8     :: r0_cond, dr0cond_dn, r0cond_x, r0cond_y, r0cond_p
+real*8     :: vc_x, vc_y, vc_p, dvc_x, dvc_y, dvc_p
+real*8     :: Bgrad_T_star_c, Bgrad_T_k_star_c, dBgrad_T_star_c, dBgrad_T_k_star_c
 real*8     :: D_prof, D_par_local, ZK_prof, psi_norm
 real*8     :: rhs_ij_1,   rhs_ij_2,   rhs_ij_3,   rhs_ij_4,   rhs_ij_5,   rhs_ij_6
 real*8     :: rhs_ij_5_k, rhs_ij_6_k
@@ -61,8 +65,8 @@ real*8     :: w0_xs, w0_xt, w0_ys, w0_yt, w0_xx, w0_yy, w0_xy, w0_ss, w0_tt, w0_
 real*8     :: BigR_x, vv2, eta_T, visco_T, deta_dT, d2eta_d2T, dvisco_dT
 real*8     :: eta_T_ohm, deta_dT_ohm
 real*8     :: amat_11, amat_12, amat_21, amat_22, amat_23, amat_24, amat_25, amat_26, amat_33, amat_31, amat_44, amat_42
-real*8     :: amat_51, amat_52, amat_55, amat_61, amat_62, amat_63, amat_66, amat_16, amat_13
-real*8     :: amat_12_n, amat_23_n, amat_51_k, amat_55_kn, amat_55_k, amat_55_n, amat_61_k, amat_66_kn, amat_66_k, amat_66_n
+real*8     :: amat_51, amat_52, amat_55, amat_61, amat_62, amat_63, amat_65, amat_66, amat_16, amat_13
+real*8     :: amat_12_n, amat_23_n, amat_51_k, amat_55_kn, amat_55_k, amat_55_n, amat_61_k, amat_65_k, amat_66_kn, amat_66_k, amat_66_n
 real*8     :: amat_stab_11, amat_stab_12, amat_stab_13, amat_stab_14 ,amat_stab_21,amat_stab_22, amat_stab_23, amat_stab_24
 real*8     :: amat_stab_31, amat_stab_32, amat_stab_33, amat_stab_34 ,amat_stab_41,amat_stab_42, amat_stab_43, amat_stab_44
 real*8     :: theta, zeta, delta_u_x, delta_u_y
@@ -375,12 +379,35 @@ do ms=1, n_gauss
               - v_t  * (x_st(ms,mt)*y_s(ms,mt) - x_ss(ms,mt)*y_t(ms,mt) )  )  / xjac**2           &
               - xjac_x * (- v_s * x_t(ms,mt) + v_t * x_s(ms,mt) )   / xjac**2
 
+         ! --- Density weighting of the heat conduction.
+         !     Models 600 and 183 advance the pressure, d(rho T)/dt = ..., with an unweighted
+         !     conduction operator div(kappa grad T).  Dividing that row by rho gives exactly the
+         !     temperature equation solved here, except that conduction then enters as
+         !         (1/rho) * div(kappa grad T)
+         !     with the 1/rho OUTSIDE the divergence.  In the weak form this is equivalent to
+         !     testing the conduction terms with (v/rho) instead of v, i.e. replacing grad(v) by
+         !         grad(v/rho) = grad(v)/rho - v grad(rho)/rho**2
+         !     Simply scaling ZK_par/ZK_perp by 1/rho would instead give div((kappa/rho) grad T),
+         !     which differs by kappa grad(T).grad(1/rho) and is NOT what 600/183 solve.
+         !     corr_neg_dens keeps the weight positive, matching model 600's use of r0_corr.
+         r0_cond    = corr_neg_dens(r0)
+         dr0cond_dn = dcorr_neg_dens_drho(r0)
+         r0cond_x   = dr0cond_dn * r0_x
+         r0cond_y   = dr0cond_dn * r0_y
+         r0cond_p   = dr0cond_dn * r0_p
+
+         vc_x = ( v_x - v * r0cond_x / r0_cond ) / r0_cond
+         vc_y = ( v_y - v * r0cond_y / r0_cond ) / r0_cond
+         vc_p = ( v_p - v * r0cond_p / r0_cond ) / r0_cond
+
          Bgrad_rho_star   = ( v_x  * ps0_y - v_y  * ps0_x ) / BigR                         ! only the part without    d/d(phi)
          Bgrad_rho_k_star = ( F0 / BigR * v_p )           / BigR                           ! only the part containing d/d(phi)
          Bgrad_rho        = ( F0 / BigR * r0_p +  r0_x * ps0_y - r0_y * ps0_x ) / BigR
          Bgrad_T_star     = ( v_x  * ps0_y - v_y  * ps0_x ) / BigR                         ! only the part without    d/d(phi)
          Bgrad_T_k_star   = ( F0 / BigR * v_p           ) / BigR                         ! only the part containing d/d(phi)
          Bgrad_T          = ( F0 / BigR * T0_p +  T0_x * ps0_y - T0_y * ps0_x ) / BigR
+         Bgrad_T_star_c   = ( vc_x * ps0_y - vc_y * ps0_x ) / BigR                         ! as Bgrad_T_star,   tested with v/rho
+         Bgrad_T_k_star_c = ( F0 / BigR * vc_p            ) / BigR                         ! as Bgrad_T_k_star, tested with v/rho
 
          BB2 = (F0*F0 + ps0_x * ps0_x + ps0_y * ps0_y )/BigR**2
 
@@ -415,13 +442,13 @@ do ms=1, n_gauss
          rhs_ij_6 =   v * BigR * heat_source(ms,mt)                               * xjac * tstep &
                     + v * BigR**2 * ( T0_s * u0_t - T0_t * u0_s)                         * tstep &
                     + v * 2.d0* (GAMMA-1.d0) * BigR * T0 * u0_y                   * xjac * tstep &
-                    - (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_star * Bgrad_T      * xjac * tstep &
-                    - ZK_prof * BigR * (v_x*T0_x + v_y*T0_y                     ) * xjac * tstep &
+                    - (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_star_c * Bgrad_T    * xjac * tstep &
+                    - ZK_prof * BigR * (vc_x*T0_x + vc_y*T0_y                   ) * xjac * tstep &
                     + zeta * v * delta_g(mp,6,ms,mt) * BigR                       * xjac         &
                     + v * (gamma-1.d0) * eta_T_ohm * (zj0 / BigR)**2.d0    * BigR * xjac * tstep
 
-         rhs_ij_6_k = - (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_k_star * Bgrad_T * xjac * tstep &
-                      - ZK_prof * BigR * (                + v_p*T0_p /BigR**2 )  * xjac * tstep
+         rhs_ij_6_k = - (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_k_star_c * Bgrad_T * xjac * tstep &
+                      - ZK_prof * BigR * (                + vc_p*T0_p /BigR**2 )  * xjac * tstep
 
          ij1 = index_ij
          ij2 = index_ij + 1
@@ -560,17 +587,17 @@ do ms=1, n_gauss
 
 
 !------------------------------------------------------------ equation 6
-             Bgrad_T_star_psi = ( v_x  * psi_y - v_y  * psi_x  ) / BigR
+             Bgrad_T_star_psi = ( vc_x * psi_y - vc_y * psi_x  ) / BigR
              Bgrad_T_psi      = ( T0_x * psi_y - T0_y * psi_x )  / BigR
              Bgrad_T_T        = ( T_x * ps0_y - T_y * ps0_x ) / BigR
              Bgrad_T_T_n      = ( F0 / BigR * T_p) / BigR
 
-             amat_61 = - (ZK_par-ZK_prof) * BigR * BB2_psi / BB2**2 * Bgrad_T_star     * Bgrad_T     * xjac * theta * tstep &
+             amat_61 = - (ZK_par-ZK_prof) * BigR * BB2_psi / BB2**2 * Bgrad_T_star_c   * Bgrad_T     * xjac * theta * tstep &
                        + (ZK_par-ZK_prof) * BigR / BB2              * Bgrad_T_star_psi * Bgrad_T     * xjac * theta * tstep &
-                       + (ZK_par-ZK_prof) * BigR / BB2              * Bgrad_T_star     * Bgrad_T_psi * xjac * theta * tstep
+                       + (ZK_par-ZK_prof) * BigR / BB2              * Bgrad_T_star_c   * Bgrad_T_psi * xjac * theta * tstep
 
-             amat_61_k = - (ZK_par-ZK_prof) * BigR * BB2_psi / BB2**2 * Bgrad_T_k_star * Bgrad_T     * xjac * theta * tstep &
-                         + (ZK_par-ZK_prof) * BigR / BB2              * Bgrad_T_k_star * Bgrad_T_psi * xjac * theta * tstep
+             amat_61_k = - (ZK_par-ZK_prof) * BigR * BB2_psi / BB2**2 * Bgrad_T_k_star_c * Bgrad_T     * xjac * theta * tstep &
+                         + (ZK_par-ZK_prof) * BigR / BB2              * Bgrad_T_k_star_c * Bgrad_T_psi * xjac * theta * tstep
 
              amat_62 = - v * BigR**2 * ( T0_s * u_t - T0_t * u_s)                    * theta * tstep &
                        - v * 2.d0* (GAMMA-1.d0) * BigR * T0 * u_y             * xjac * theta * tstep
@@ -580,15 +607,31 @@ do ms=1, n_gauss
              amat_66 =   v * T   * BigR * xjac * (1.d0 + zeta)                                           &
                        - v * BigR**2 * ( T_s * u0_t - T_t * u0_s)                        * theta * tstep &
                        - v * 2.d0* (GAMMA-1.d0) * BigR * T * u0_y                 * xjac * theta * tstep &
-                       + (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_star * Bgrad_T_T * xjac * theta * tstep &
-                       + ZK_prof * BigR * ( v_x*T_x + v_y*T_y )                   * xjac * theta * tstep &
+                       + (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_star_c * Bgrad_T_T * xjac * theta * tstep &
+                       + ZK_prof * BigR * ( vc_x*T_x + vc_y*T_y )                  * xjac * theta * tstep &
                        - v * T * (gamma-1.d0) * deta_dT_ohm * (zj0 / BigR)**2.d0  * BigR * xjac  * theta * tstep
 
-             amat_66_k = + (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_k_star * Bgrad_T_T    * xjac * theta * tstep
-             amat_66_n = + (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_star   * Bgrad_T_T_n  * xjac * theta * tstep
+             amat_66_k = + (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_k_star_c * Bgrad_T_T    * xjac * theta * tstep
+             amat_66_n = + (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_star_c   * Bgrad_T_T_n  * xjac * theta * tstep
 
-             amat_66_kn = + (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_k_star * Bgrad_T_T_n * xjac * theta * tstep &
-                          + ZK_prof * BigR   * (v_p*T_p /BigR**2 )                       * xjac * theta * tstep
+             amat_66_kn = + (ZK_par-ZK_prof) * BigR / BB2 * Bgrad_T_k_star_c * Bgrad_T_T_n * xjac * theta * tstep &
+                          + ZK_prof * BigR   * (vc_p*T_p /BigR**2 )                        * xjac * theta * tstep
+
+             ! --- Temperature equation now depends on the density through the 1/rho conduction
+             !     weight, so the T-rho block of the Jacobian is no longer zero.
+             !     d(vc_x)/d(rho) with trial functions (rho, rho_x), holding dr0cond_dn fixed:
+             dvc_x = dr0cond_dn * ( - v_x * rho - v * rho_x + 2.d0 * v * r0cond_x * rho / r0_cond ) / r0_cond**2
+             dvc_y = dr0cond_dn * ( - v_y * rho - v * rho_y + 2.d0 * v * r0cond_y * rho / r0_cond ) / r0_cond**2
+             dvc_p = dr0cond_dn * ( - v_p * rho - v * rho_p + 2.d0 * v * r0cond_p * rho / r0_cond ) / r0_cond**2
+
+             dBgrad_T_star_c   = ( dvc_x * ps0_y - dvc_y * ps0_x ) / BigR
+             dBgrad_T_k_star_c = ( F0 / BigR * dvc_p             ) / BigR
+
+             amat_65   = + (ZK_par-ZK_prof) * BigR / BB2 * dBgrad_T_star_c * Bgrad_T * xjac * theta * tstep &
+                         + ZK_prof * BigR * ( dvc_x*T0_x + dvc_y*T0_y )              * xjac * theta * tstep
+
+             amat_65_k = + (ZK_par-ZK_prof) * BigR / BB2 * dBgrad_T_k_star_c * Bgrad_T * xjac * theta * tstep &
+                         + ZK_prof * BigR * (                 dvc_p*T0_p /BigR**2 )    * xjac * theta * tstep
 
 
              kl1 = index_kl
@@ -639,6 +682,9 @@ do ms=1, n_gauss
 
              ELM_p(mp,ij6,kl2)  =  ELM_p(mp,ij6,kl2)  + wst * amat_62
              ELM_p(mp,ij6,kl3)  =  ELM_p(mp,ij6,kl3)  + wst * amat_63
+
+             ELM_p(mp,ij6,kl5)  =  ELM_p(mp,ij6,kl5)  + wst * amat_65
+             ELM_k(mp,ij6,kl5)  =  ELM_k(mp,ij6,kl5)  + wst * amat_65_k
 
              ELM_p(mp,ij6,kl6)  =  ELM_p(mp,ij6,kl6)  + wst * amat_66
              ELM_k(mp,ij6,kl6)  =  ELM_k(mp,ij6,kl6)  + wst * amat_66_k
