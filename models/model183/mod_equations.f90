@@ -168,7 +168,7 @@ module mod_equations
     use phys_module, only: time_evol_zeta, time_evol_theta, Igamma => gamma, Itstep => tstep, Ivisco_num => visco_num,    &
                            Ivisco_par => visco_par, Ivisco_par_par => visco_par_par, Ivisco_par_num => visco_par_num,     &
                            Ieta_num => eta_num, ID_perp_num => D_perp_num, zk_perp_num,  &
-                           Ieta => eta, eta_ohmic, Inu_phi_source => nu_phi_source
+                           Ieta => eta, eta_ohmic, Inu_phi_source => nu_phi_source, ItauIC => tauIC
     implicit none
     
     integer  :: i, i_var, j_var
@@ -194,7 +194,7 @@ module mod_equations
     D_perp_num       = const(value = ID_perp_num,       token = "D_perp_num"   )
     k_perp_num       = const(value = zk_perp_num,       token = "zk_perp_num"  )
     gamma            = const(value = Igamma,            token = "gamma"        )
-    tauIC            = const(value = 1.605d-2,          token = "tauIC"        )    ! Diamagnetic drift constant - value for deuterium plasma with n0=1.d20
+    tauIC            = const(value = ItauIC,            token = "tauIC"        )    ! Diamagnetic drift constant
     if (Ieta .ne. 0.d0) then
       reta           = const(value = eta_ohmic/Ieta,  token = "reta")
     else
