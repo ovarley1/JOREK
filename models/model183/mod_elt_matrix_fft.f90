@@ -420,6 +420,16 @@ do ms=1, n_gauss
         end if
       endif
 
+      ! Fill in negative density correction for regularisation of 1/rho terms for diamagnetic drifts.
+      ! see corr_neg page in the jorek wiki, short explanation in models/corr_neg_include.f90 
+      rho0_corr    = corr_neg_dens(eq(var_rho,0,0,0,1))  ! corrected density
+      drho0_corr_dn= dcorr_neg_dens_drho(eq(var_rho,0,0,0,1)) ! derivative of corrected density
+      eq(var_rho0_corr,0,0,0,:) = rho0_corr
+      eq(var_rho0_corr ,1,0,0,:) = drho0_corr_dn * eq(var_rho,1,0,0,:)   ! chain rule
+      eq(var_rho0_corr ,0,1,0,:) = drho0_corr_dn * eq(var_rho,0,1,0,:)   ! chain rule
+      eq(var_rho0_corr ,0,0,1,:) = drho0_corr_dn * eq(var_rho,0,0,1,:)   ! chain rule
+      eq(var_drho0_corr_dn,0,0,0,:) = drho0_corr_dn
+
       if (with_TiTe) then
         
         ! Perpendicular thermal conductivity
@@ -474,11 +484,11 @@ do ms=1, n_gauss
         ! see corr_neg page in the jorek wiki, short explanation in models/corr_neg_include.f90 
         T0_i_corr    = corr_neg_temp(eq(var_Ti,0,0,0,1))  ! corrected ion temperature
         T0_e_corr    = corr_neg_temp(eq(var_Te,0,0,0,1))  ! corrected electron temperature
-        rho0_corr    = corr_neg_dens(eq(var_rho,0,0,0,1))  ! corrected density
+        ! rho0_corr    = corr_neg_dens(eq(var_rho,0,0,0,1))  ! corrected density
 
         dT0_i_corr_dT= dcorr_neg_temp_dT(eq(var_Ti,0,0,0,1))   ! derivative of corrected ion temperature
         dT0_e_corr_dT= dcorr_neg_temp_dT(eq(var_Te,0,0,0,1))   ! derivative of corrected electron temperature
-        drho0_corr_dn= dcorr_neg_dens_drho(eq(var_rho,0,0,0,1)) ! dericative of corrected density
+        ! drho0_corr_dn= dcorr_neg_dens_drho(eq(var_rho,0,0,0,1)) ! derivative of corrected density
 
         T0_e_corr_eV = T0_e_corr/(EL_CHG*MU_ZERO*central_density*1.d20) ! electron temperature in eV
         T0_i_corr_eV = T0_i_corr/(EL_CHG*MU_ZERO*central_density*1.d20) ! ion temperature in eV
