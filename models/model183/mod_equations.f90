@@ -274,7 +274,8 @@ module mod_equations
       amat_semianalytic(var_Psi, var_T)   = amat_semianalytic(var_Psi, var_T)                   &
                                           - (tstep*theta)*v*tauIC/(rho0_corr*Bv2)*(Bv_parderiv(rho0*T)-Bv_pbrack(Psi0,rho0*T))*(Bv2/B2-0.5d0)  ! Diamagnetic drift term.
       amat_semianalytic(var_Psi, var_Psi) = amat_semianalytic(var_Psi, var_Psi)                                  &
-                                          + (tstep*theta)*v*tauIC/(rho0_corr*Bv2)*(Bv_pbrack(Psi,rho0*T0))*(Bv2/B2-0.5d0)             ! Diamagnetic drift term.
+                                          + (tstep*theta)*v*tauIC/(rho0_corr*Bv2)*(Bv_pbrack(Psi,rho0*T0))*(Bv2/B2-0.5d0)     &             ! Diamagnetic drift term.
+                                          - (tstep*theta)*v*tauIC/(rho0_corr*Bv2)*(Bv_pbrack(Psi0,rho0*T0))*(Bv2*B2_Psi/(B2*B2))
       amat_semianalytic(var_Psi, var_rho) = (-tstep*theta)*v*tauIC/(rho0_corr*Bv2)*(-drho0_corr_dn*rho/rho0_corr*(Bv_parderiv(rho0*T0)-Bv_pbrack(Psi0, rho0*T0)) &
                                           + (Bv_parderiv(rho*T0)-Bv_pbrack(Psi0,rho*T0)))*(Bv2/B2-0.5d0)  ! Diamagnetic drift term.
     end if
