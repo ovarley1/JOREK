@@ -30,6 +30,11 @@ set xrange <xrange>
 set yrange <yrange>
 set format y "%g"
 set format x "%g"
+set border lc 'white'
+set ylabel tc 'white'
+set xlabel tc 'white'
+set key tc 'white'
+set grid lc 'white'
 
 plot for [i=ncols0:ncols+1] qtty.'.dat' u ($1*x_toSI):(column(i)*y_toSI) w lp lc i t columnhead(i)
 
