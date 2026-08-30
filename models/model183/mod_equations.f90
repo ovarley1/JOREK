@@ -268,16 +268,24 @@ module mod_equations
       amat_semianalytic(var_Psi, var_Te) = (-tstep*theta)*v*deta_dT*T_e*(zj0 - S_j)                 ! Resistivity and current source
     else                                                                                            
       amat_semianalytic(var_Psi, var_T) = (-tstep*theta)*v*deta_dT*T*(zj0 - S_j)                    ! Resistivity and current source
-      
+
       rhs_semianalytic(var_Psi)           = rhs_semianalytic(var_Psi)                                  &
-                                          + tstep*v*tauIC/(rho0_corr*Bv2)*(Bv_parderiv(rho0*T0)-Bv_pbrack(Psi0,rho0*T0))*(Bv2/B2-0.5d0)             ! Diamagnetic drift term.
+                                          + tstep*v*tauIC*(Bv_parderiv(rho0*T0)-Bv_pbrack(Psi0,rho0*T0))/(2.d0*rho0_corr*B2)    &
+                                          - tstep*v*tauIC*(Bv_parderiv(rho0*T0)-Bv_pbrack(Psi0,rho0*T0))*inprod(Psi0,Psi0)/(2.d0*rho0_corr*B2)
       amat_semianalytic(var_Psi, var_T)   = amat_semianalytic(var_Psi, var_T)                   &
-                                          - (tstep*theta)*v*tauIC/(rho0_corr*Bv2)*(Bv_parderiv(rho0*T)-Bv_pbrack(Psi0,rho0*T))*(Bv2/B2-0.5d0)  ! Diamagnetic drift term.
-      amat_semianalytic(var_Psi, var_Psi) = amat_semianalytic(var_Psi, var_Psi)                                  &
-                                          + (tstep*theta)*v*tauIC/(rho0_corr*Bv2)*(Bv_pbrack(Psi,rho0*T0))*(Bv2/B2-0.5d0)     &             ! Diamagnetic drift term.
-                                          - (tstep*theta)*v*tauIC/(rho0_corr*Bv2)*(Bv_pbrack(Psi0,rho0*T0))*(Bv2*B2_Psi/(B2*B2))
-      amat_semianalytic(var_Psi, var_rho) = (-tstep*theta)*v*tauIC/(rho0_corr*Bv2)*(-drho0_corr_dn*rho/rho0_corr*(Bv_parderiv(rho0*T0)-Bv_pbrack(Psi0, rho0*T0)) &
-                                          + (Bv_parderiv(rho*T0)-Bv_pbrack(Psi0,rho*T0)))*(Bv2/B2-0.5d0)  ! Diamagnetic drift term.
+                                          - (tstep*theta)*v*tauIC*(Bv_parderiv(rho0*T)-Bv_pbrack(Psi0,rho0*T))/(2.d0*rho0_corr*B2)  &
+                                          + (tstep*theta)*v*tauIC*(Bv_parderiv(rho0*T)-Bv_pbrack(Psi0,rho0*T))*inprod(Psi0,Psi0)/(2.d0*rho0_corr*B2)
+      amat_semianalytic(var_Psi, var_Psi) = amat_semianalytic(var_Psi, var_Psi)                                     &
+                                          - (tstep*theta)*v*tauIC*(-Bv_pbrack(Psi,rho0*T0)*(1.d0-inprod(Psi0,Psi0))       &
+                                          - 2.d0*(Bv_parderiv(rho0*T0) - Bv_pbrack(Psi0,rho0*T0))*inprod(Psi,Psi0)  &
+                                          - B2_Psi*(Bv_parderiv(rho0*T0)-Bv_pbrack(Psi0,rho0*T0))*(1.d0-inprod(Psi0,Psi0))/B2 &
+                                          )/(2.d0*rho0_corr*B2)
+                                          
+      amat_semianalytic(var_Psi, var_rho) = (-tstep*theta)*v*tauIC*((Bv_parderiv(rho*T0)-Bv_pbrack(Psi0,rho*T0))        &
+                                          - (Bv_parderiv(rho0*T0)-Bv_pbrack(Psi0,rho0*T0))*drho0_corr_dn*rho/rho0_corr  &
+                                          - inprod(Psi0,Psi0)*(Bv_parderiv(rho*T0)-Bv_pbrack(Psi0,rho*T0)               &
+                                          - (Bv_parderiv(rho0*T0)-Bv_pbrack(Psi0,rho0*T0))*drho0_corr_dn*rho/rho0_corr) &
+                                          )/(2.d0*rho0_corr*B2)
     end if
 
     !###################################################################################################
