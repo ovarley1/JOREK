@@ -117,7 +117,7 @@ module mod_expression
     call add(exprs_all, 'x           ', 'Cartesian Coordinate x                                ')
     call add(exprs_all, 'y           ', 'Cartesian Coordinate y                                ')
     call add(exprs_all, 'z           ', 'Cartesian Coordinate z (== Cylindrical Z)             ')
-    call add(exprs_all, 'Psi_N       ', 'Normalized Poloidal Magnetic Flux                     ')
+    call add(exprs_all, 'Psi_N       ', 'Norm. pol. flux (stel: sqrt of norm. toroidal flux)   ')
     call add(exprs_all, 'xjac        ', '2D Jacobian in the Poloidal Plane                     ')
     call add(exprs_all, 't           ', 'Simulation time                                       ')
     call add(exprs_all, 'Psi         ', 'Poloidal Magnetic Flux                                ')
@@ -599,6 +599,9 @@ module mod_expression
       AR0_ss, AR0_tt, AR0_st, AR0_pp, AZ0, AZ0_p, AZ0_s, AZ0_t, AZ0_sp, AZ0_tp, AZ0_ss, AZ0_tt,    &
       AZ0_st, AZ0_pp, A30, A30_p, A30_s, A30_t, A30_ss, A30_tt, A30_st, A30_sp, A30_tp, A30_pp,    &
       Fprofile, Fprofile_s, Fprofile_t, Fprofile_R, Fprofile_Z
+#if STELLARATOR_MODEL
+    real*8  :: r_tor_eq_loc     !< GVEC radial coordinate = sqrt(normalised toroidal flux)
+#endif
     real*8  :: ps0_R, ps0_Z, ps0_RR, ps0_ZZ, ps0_RZ, u0_R, u0_Z, u0_RR, u0_ZZ, u0_RZ, vv2, zj0_R,  &
       zj0_Z, zj0_RR, zj0_ZZ, zj0_RZ, w0_R, w0_Z, w0_RR, w0_ZZ, w0_RZ, r0_R, r0_Z, r0_RR, r0_ZZ,    &
       r0_RZ, r0_hat, r0_R_hat, r0_Z_hat, T0_R, T0_Z, T0_RR, T0_ZZ, T0_RZ, T0_ps0_R, T0_ps0_Z,      &
@@ -822,6 +825,9 @@ module mod_expression
 
           delta_g(:) = 0.d0; delta_s(:) = 0.d0; delta_t(:) = 0.d0
           Fprofile = 0.d0;  Fprofile_s = 0.d0;  Fprofile_t = 0.d0
+#if STELLARATOR_MODEL
+          r_tor_eq_loc = 0.d0
+#endif
           aux = 0.d0
           
           ! --- Reconstruct variables
@@ -840,6 +846,10 @@ module mod_expression
               Fprofile   = Fprofile   + nodes(i)%Fprof_eq(j) * sz * hh  
               Fprofile_s = Fprofile_s + nodes(i)%Fprof_eq(j) * sz * hh_s  
               Fprofile_t = Fprofile_t + nodes(i)%Fprof_eq(j) * sz * hh_t  
+#endif
+#if STELLARATOR_MODEL
+              ! --- GVEC radial coordinate.
+              r_tor_eq_loc = r_tor_eq_loc + nodes(i)%r_tor_eq(j) * sz * hh
 #endif
               
               do i_tor = 1, n_tor
@@ -1324,7 +1334,13 @@ module mod_expression
           Btheta   = sqrt(ps0_R*ps0_R + ps0_Z * ps0_Z) / BigR
           JpolR    = ( -zj0 * BR - R * P0_Z ) / F0
           JpolZ    = ( -zj0 * BZ + R * P0_R ) / F0
+#if STELLARATOR_MODEL
+          ! NOTE this is sqrt(normalised TOROIDAL flux), not normalised poloidal flux.
+          ! It's also fixed to the equilibrium field.
+          psi_norm = ( r_tor_eq_loc - eq%psi_axis ) / ( eq%psi_bnd - eq%psi_axis )
+#else
           psi_norm = get_psi_n(ps0, Z)
+#endif
           psi_abs  = sqrt(ps0_R*ps0_R + ps0_Z * ps0_Z)
 
           BR_R     = + ps0_RZ / BigR - ps0_Z / BigR**2

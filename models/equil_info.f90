@@ -1024,6 +1024,43 @@ module equil_info
   end function get_psi_n
   
   
+
+  
+  !> Calculate the normalised radial (flux-surface) coordinate at a point given by its element
+  !! number and local element coordinates (s,t).
+  !!
+  !! Tokamak models:     normalised poloidal flux Psi_N. Identical to get_psi_n, including the
+  !!                     X-point private-region correction when Z is supplied.
+  !! Stellarator models: the GVEC radial coordinate r_tor_eq, i.e. sqrt(normalised TOROIDAL flux),
+  !!                     interpolated from the imported GVEC grid.
+  pure real*8 function get_rcoord( node_list, element_list, i_elm, s, t, Z )
+    
+    ! --- Routine parameters.
+    type(type_node_list),    intent(in) :: node_list
+    type(type_element_list), intent(in) :: element_list
+    integer,                 intent(in) :: i_elm                !< Element number
+    real*8,                  intent(in) :: s, t                 !< Local coordinates in the element
+    real*8,   optional,      intent(in) :: Z                    !< Vertical position coordinate Z
+    
+    ! --- Local
+    real*8   :: P, dummy
+    
+#if STELLARATOR_MODEL
+    call interp_gvec( node_list, element_list, i_elm, 4, 1, 1, s, t, P, dummy, dummy, dummy,        &
+      dummy, dummy )
+    get_rcoord = ( P - ES%psi_axis ) / ( ES%psi_bnd - ES%psi_axis )
+#else
+    call interp( node_list, element_list, i_elm, 1, 1, s, t, P )
+    if ( present(Z) ) then
+      get_rcoord = get_psi_n( P, Z )
+    else
+      get_rcoord = get_psi_n( P )
+    end if
+#endif
+    
+  end function get_rcoord
+  
+  
   
   
   !> Broadcast equil_state information between MPI processes

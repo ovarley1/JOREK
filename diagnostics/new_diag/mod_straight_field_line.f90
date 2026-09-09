@@ -411,8 +411,7 @@ module mod_straight_field_line
         
         call find_RZ(node_list, element_list, Rmid, equil_state%Z_axis, R_out, Z_out, i_elm_out,   &
           s_out, t_out, ifail)
-        call interp0(node_list, element_list, i_elm_out, 1, 1, s_out, t_out, P, P_s, P_t)
-        if ( get_psi_n(P, Z_out)  < mapping%psin(k) ) then
+        if ( get_rcoord(node_list, element_list, i_elm_out, s_out, t_out, Z_out) < mapping%psin(k) ) then
           Rleft  = Rmid
         else
           Rright = Rmid
