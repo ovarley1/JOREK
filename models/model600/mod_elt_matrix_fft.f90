@@ -2074,8 +2074,12 @@ do i=1,n_vertex_max
                             ! ------------------------------ from kinetic neutral / impurity coupling ---------------------------------------
                              + v * BigR * aux_E0                                                                         * xjac * tstep * factor(var_T,24) &
                              + (gamma-1.d0)*0.5d0 * v * aux_rho0                                 * vpar0**2 * BB2 * BigR * xjac * tstep * factor(var_T,25) &
-                             - (gamma-1.d0)*v * aux_mom_par0 * vpar0 * BigR                                              * xjac * tstep * factor(var_T,26) 
+                             - (gamma-1.d0)*v * aux_mom_par0 * vpar0 * BigR                                              * xjac * tstep * factor(var_T,26) &
                             ! --------------------------------- end of terms from kinetic coupling ------------------------------------------
+
+                            ! --------------------------------- Diamagnetic terms -----------------------------------------------------------
+                             + v * tauIC * gamma * T0 * (2.d0 * (T0_y * r0 + T0 * r0_y)                                    * xjac                             &
+                             + BigR/r0_corr * ((T0_s * r0 + T0 * r0_s) * r0_t - (T0_t * r0 + T0 * r0_t) * r0_s))  * BigR        * tstep * factor(var_T,26) 
 
               if (with_impurities) then
                 rhs_ij(var_T) = rhs_ij(var_T) + &
@@ -4161,7 +4165,13 @@ do i=1,n_vertex_max
 
                     !==============================ZKperp density dependence=================
                            - dZK_prof_drho * rho * BigR / BB2 * Bgrad_T_star * Bgrad_T       * xjac * theta * tstep &
-                           + dZK_prof_drho * rho * BigR * (v_x*T0_x + v_y*T0_y)              * xjac * theta * tstep
+                           + dZK_prof_drho * rho * BigR * (v_x*T0_x + v_y*T0_y)              * xjac * theta * tstep &
+
+                    !============================== Diamagnetic terms =======================
+                             - v * tauIC * gamma * T0 * (2.d0 * (T0_y * rho + T0 * rho_y)    * xjac                       &
+                             - BigR * rho/r0_corr**2 * ((T0_s * r0 + T0 * r0_s) * r0_t - (T0_t * r0 + T0 * r0_t) * r0_s)  &
+                             + BigR/r0_corr * ((T0_s * rho + T0 * rho_s) * r0_t - (T0_t * rho + T0 * rho_t) * r0_s)       &
+                             + BigR/r0_corr * ((T0_s * r0 + T0 * r0_s) * rho_t - (T0_t * r0 + T0 * r0_t) * rho_s))  * BigR * theta * tstep 
   
 
                     amat_n(var_T,var_rho) = + v * T0  * F0 / BigR * Vpar0 * rho_p      * xjac * theta * tstep         &
@@ -4277,7 +4287,14 @@ do i=1,n_vertex_max
                                     * ( v_x * ps0_y -  v_y * ps0_x                  )  * xjac * theta * tstep * tstep &
                           + tgnum_T * 0.25d0 / BigR * vpar0**2 &
                                     * (alpha_imp_tri*rimp0)* T * (T0_x * ps0_y - T0_y * ps0_x + F0 / BigR * T0_p)      &
-                                    * ( v_x * ps0_y -  v_y * ps0_x                  ) * xjac * theta * tstep * tstep 
+                                    * ( v_x * ps0_y -  v_y * ps0_x                  ) * xjac * theta * tstep * tstep   &
+
+                          !============================== Diamagnetic drift terms ==================================
+                          - v * tauIC * gamma * T * (2.d0 * (T0_y * r0 + T0 * r0_y)     * xjac                                          &
+                          + BigR/r0_corr * ((T0_s * r0 + T0 * r0_s) * r0_t - (T0_t * r0 + T0 * r0_t) * r0_s))   * BigR * theta * tstep  &
+                          - v * tauIC * gamma * T0 * (2.d0 * (T_y * r0 + T * r0_y)      * xjac                                          &
+                          + BigR/r0_corr * ((T_s * r0 + T * r0_s) * r0_t - (T_t * r0 + T * r0_t) * r0_s))       * BigR * theta * tstep
+
   
                     amat_k(var_T,var_T) = + (ZK_par_T-ZK_prof) * BigR / BB2 * Bgrad_T_k_star * Bgrad_T_T * xjac * theta * tstep  &
                                           + dZK_par_dT * T     * BigR / BB2 * Bgrad_T_k_star * Bgrad_T   * xjac * theta * tstep  &
