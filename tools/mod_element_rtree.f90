@@ -166,8 +166,8 @@ subroutine populate_element_rtree_2D(node_list, element_list)
 
 #if STELLARATOR_MODEL
        ! Initialise phi component for stellarator geometry.
-       element_data(i)%min_vals(3) = real(-PI, C_DOUBLE)
-       element_data(i)%max_vals(3) = real(+PI, C_DOUBLE)
+       element_data(i)%min_vals(3) = real(0, C_DOUBLE)
+       element_data(i)%max_vals(3) = real(2.*PI, C_DOUBLE)
 #endif
 
        ! 4. Store Pointers for C++
