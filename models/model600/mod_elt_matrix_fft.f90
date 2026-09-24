@@ -2078,9 +2078,16 @@ do i=1,n_vertex_max
                             ! --------------------------------- end of terms from kinetic coupling ------------------------------------------
 
                             ! --------------------------------- Diamagnetic terms -----------------------------------------------------------
-                             + v * tauIC * gamma * T0 * (2.d0 * (T0_y * r0 + T0 * r0_y)                                    * xjac                             &
-                             + BigR/r0_corr * ((T0_s * r0 + T0 * r0_s) * r0_t - (T0_t * r0 + T0 * r0_t) * r0_s))  * BigR        * tstep * factor(var_T,26) 
+                             + v * tauIC * gamma * T0 * (2.d0 * (T0_y * r0 + T0 * r0_y)                                  * xjac                             &
+                             + BigR/r0_corr * ((T0_s * r0 + T0 * r0_s) * r0_t - (T0_t * r0 + T0 * r0_t) * r0_s))  * BigR        * tstep * factor(var_T,26)  &
 
+                             ! v_p parts are in rhs_ij_k(var_T); the ps0_p/BigR**2 parts of the two brackets cancel exactly and are dropped
+                             - tauIC*F0/(1.256637d-6) * ( - ((r0_x*T0 + r0*T0_x) * ps0_x + (r0_y*T0 + r0*T0_y) * ps0_y) * v/r0_corr**2 * r0_p  &
+                             - (T0_p*r0 + T0*r0_p) * (ps0_x*(v_x/r0_corr - v/r0_corr**2 * r0_x) + ps0_y*(v_y/r0_corr - v/r0_corr**2 * r0_y))  &
+                                              ) * xjac * tstep * factor(var_T,26)  &
+                             + tauIC*gamma*F0/(1.256637d-6) * ((r0_x * ps0_x + r0_y * ps0_y) * (v*T0_p/r0_corr - v*T0/r0_corr**2 * r0_p)  &
+                             - r0_p * (ps0_x*(v_x*T0/r0_corr + v*T0_x/r0_corr - v*T0/r0_corr**2 * r0_x) + ps0_y*(v_y*T0/r0_corr + v*T0_y/r0_corr - v*T0/r0_corr**2 * r0_y))  &
+                                                    ) * xjac * tstep * factor(var_T,26)
               if (with_impurities) then
                 rhs_ij(var_T) = rhs_ij(var_T) + &
                 !===================== Additional terms from ionization energy terms============
@@ -2125,7 +2132,10 @@ do i=1,n_vertex_max
                                      * (                                   + F0 / BigR * v_p)   * xjac * tstep * tstep * factor(var_T,8 )&
                              - tgnum_T * 0.25d0 / BigR * vpar0**2                                                      &
                                      * (r0+alpha_imp_bis*rimp0) * (T0_x * ps0_y - T0_y * ps0_x + F0 / BigR * T0_p)                           &
-                                     * (                                   + F0 / BigR * v_p)   * xjac * tstep * tstep * factor(var_T,8 )
+                                     * (                                   + F0 / BigR * v_p)   * xjac * tstep * tstep * factor(var_T,8 )  &
+                             ! Diamagnetic terms (v_p parts, see rhs_ij(var_T))
+                             - tauIC*F0/(1.256637d-6) * ((r0_x*T0 + r0*T0_x) * ps0_x + (r0_y*T0 + r0*T0_y) * ps0_y) * v_p/r0_corr * xjac * tstep * factor(var_T,26)  &
+                             + tauIC*gamma*F0/(1.256637d-6) * (r0_x * ps0_x + r0_y * ps0_y) * v_p*T0/r0_corr * xjac * tstep * factor(var_T,26)
 
               if (with_impurities) then
                 rhs_ij_k(var_T) = rhs_ij_k(var_T) + &
@@ -4055,7 +4065,16 @@ do i=1,n_vertex_max
                                     * ( v_x * psi_y -  v_y * psi_x ) * xjac * theta * tstep * tstep                   &
                           + tgnum_T * 0.25d0 / BigR * vpar0**2                                                        &
                                     * (r0+alpha_imp_bis*rimp0) * (T0_x * ps0_y - T0_y * ps0_x + F0 / BigR * T0_p)                           &
-                                    * ( v_x * psi_y -  v_y * psi_x ) * xjac * theta * tstep * tstep
+                                    * ( v_x * psi_y -  v_y * psi_x ) * xjac * theta * tstep * tstep  &
+                                                        
+                    !=================== Diamagnetic drift terms =======================================
+                          + tauIC*F0/(1.256637d-6) * ( - ((r0_x*T0 + r0*T0_x) * psi_x + (r0_y*T0 + r0*T0_y) * psi_y) * v/r0_corr**2 * r0_p  &
+                          - (T0_p*r0 + T0*r0_p) * (psi_x*(v_x/r0_corr - v/r0_corr**2 * r0_x) + psi_y*(v_y/r0_corr - v/r0_corr**2 * r0_y))  &
+                                           ) * xjac * theta * tstep  &
+                          - tauIC*gamma*F0/(1.256637d-6) * ((r0_x * psi_x + r0_y * psi_y) * (v*T0_p/r0_corr - v*T0/r0_corr**2 * r0_p)  &
+                          - r0_p * (psi_x*(v_x*T0/r0_corr + v*T0_x/r0_corr - v*T0/r0_corr**2 * r0_x) + psi_y*(v_y*T0/r0_corr + v*T0_y/r0_corr - v*T0/r0_corr**2 * r0_y))  &
+                                                 ) * xjac * theta * tstep
+  
   
                     amat_k(var_T,var_psi) = - (ZK_par_T-ZK_prof) * BigR * BB2_psi / BB2**2 * Bgrad_T_k_star * Bgrad_T     * xjac * theta * tstep &
                                             + (ZK_par_T-ZK_prof) * BigR / BB2              * Bgrad_T_k_star * Bgrad_T_psi * xjac * theta * tstep &
@@ -4073,7 +4092,10 @@ do i=1,n_vertex_max
                                     * (                            + F0 / BigR * v_p)  * xjac * theta * tstep * tstep &
                           + tgnum_T * 0.25d0 / BigR * vpar0**2                                                        &
                                     * (r0+alpha_imp*rimp0) * (T0_x * psi_y - T0_y * psi_x)                                              &
-                                    * (                            + F0 / BigR * v_p)  * xjac * theta * tstep * tstep
+                                    * (                            + F0 / BigR * v_p)  * xjac * theta * tstep * tstep  &
+                          !=================== Diamagnetic drift terms =======================================
+                          + tauIC*F0/(1.256637d-6) * ((r0_x*T0 + r0*T0_x) * psi_x + (r0_y*T0 + r0*T0_y) * psi_y) * v_p/r0_corr * xjac * theta * tstep  &
+                          - tauIC*gamma*F0/(1.256637d-6) * (r0_x * psi_x + r0_y * psi_y) * v_p*T0/r0_corr * xjac * theta * tstep
   
   
                     amat(var_T,var_u) = - v * (r0 + rimp0 * alpha_imp_bis) * BigR**2 * ( T0_x * u_y - T0_y * u_x)           * xjac * theta * tstep &
@@ -4171,8 +4193,18 @@ do i=1,n_vertex_max
                              - v * tauIC * gamma * T0 * (2.d0 * (T0_y * rho + T0 * rho_y)    * xjac                       &
                              - BigR * rho/r0_corr**2 * ((T0_s * r0 + T0 * r0_s) * r0_t - (T0_t * r0 + T0 * r0_t) * r0_s)  &
                              + BigR/r0_corr * ((T0_s * rho + T0 * rho_s) * r0_t - (T0_t * rho + T0 * rho_t) * r0_s)       &
-                             + BigR/r0_corr * ((T0_s * r0 + T0 * r0_s) * rho_t - (T0_t * r0 + T0 * r0_t) * rho_s))  * BigR * theta * tstep 
+                             + BigR/r0_corr * ((T0_s * r0 + T0 * r0_s) * rho_t - (T0_t * r0 + T0 * r0_t) * rho_s))  * BigR * theta * tstep &
   
+                             + tauIC*F0/(1.256637d-6) * ( - ((rho_x*T0 + rho*T0_x) * ps0_x + (rho_y*T0 + rho*T0_y) * ps0_y) * v/r0_corr**2 * r0_p  &
+                             + ((r0_x*T0 + r0*T0_x) * ps0_x + (r0_y*T0 + r0*T0_y) * ps0_y) * 2.d0*v/r0_corr**3 * r0_p * rho  &
+                             - T0_p*rho * (ps0_x*(v_x/r0_corr - v/r0_corr**2 * r0_x) + ps0_y*(v_y/r0_corr - v/r0_corr**2 * r0_y))  &
+                             - (T0_p*r0 + T0*r0_p) * (ps0_x*(-v_x/r0_corr**2 * rho + 2.d0*v/r0_corr**3*rho*r0_x - v/r0_corr**2 * rho_x) + ps0_y*(-v_y/r0_corr**2 * rho + 2.d0*v/r0_corr**3*rho*r0_y - v/r0_corr**2 * rho_y))  &
+                                              ) * xjac * theta * tstep  &
+                             - tauIC*gamma*F0/(1.256637d-6) * ((rho_x * ps0_x + rho_y * ps0_y) * (v*T0_p/r0_corr - v*T0/r0_corr**2 * r0_p)  &
+                             + (r0_x * ps0_x + r0_y * ps0_y) * (- v*T0_p/r0_corr**2*rho + 2.d0*v*T0/r0_corr**3*rho * r0_p)  &
+                             - r0_p * (ps0_x*(-v_x*T0/r0_corr**2*rho - v*T0_x/r0_corr**2*rho + 2.d0*v*T0/r0_corr**3*rho*r0_x - v*T0/r0_corr**2*rho_x)  &
+                                     + ps0_y*(-v_y*T0/r0_corr**2*rho - v*T0_y/r0_corr**2*rho + 2.d0*v*T0/r0_corr**3*rho*r0_y - v*T0/r0_corr**2*rho_y))  &
+                                                    ) * xjac * theta * tstep
 
                     amat_n(var_T,var_rho) = + v * T0  * F0 / BigR * Vpar0 * rho_p      * xjac * theta * tstep         &
                     !=============== The ionization potential energy term=========================
@@ -4183,7 +4215,14 @@ do i=1,n_vertex_max
   
                           + tgnum_T * 0.25d0 / BigR * vpar0**2                                                        &
                                     * T0 * (                              + F0 / BigR * rho_p)                        &
-                                    * ( v_x * ps0_y -  v_y * ps0_x                  )  * xjac * theta * tstep * tstep 
+                                    * ( v_x * ps0_y -  v_y * ps0_x                  )  * xjac * theta * tstep * tstep  &
+                          !============================== Diamagnetic terms =======================
+                          + tauIC*F0/(1.256637d-6) * ( - ((r0_x*T0 + r0*T0_x) * ps0_x + (r0_y*T0 + r0*T0_y) * ps0_y) * v/r0_corr**2 * rho_p  &
+                          - T0*rho_p * (ps0_x*(v_x/r0_corr - v/r0_corr**2 * r0_x) + ps0_y*(v_y/r0_corr - v/r0_corr**2 * r0_y))  &
+                                           ) * xjac * theta * tstep  &
+                          - tauIC*gamma*F0/(1.256637d-6) * ( - (r0_x * ps0_x + r0_y * ps0_y) * v*T0/r0_corr**2 * rho_p  &
+                          - rho_p * (ps0_x*(v_x*T0/r0_corr + v*T0_x/r0_corr - v*T0/r0_corr**2 * r0_x) + ps0_y*(v_y*T0/r0_corr + v*T0_y/r0_corr - v*T0/r0_corr**2 * r0_y))  &
+                                                 ) * xjac * theta * tstep
   
                     amat_k(var_T,var_rho) =                                                                           &
                     !=============== The ionization potential energy term=========================
@@ -4196,7 +4235,14 @@ do i=1,n_vertex_max
                                     * (                            + F0 / BigR * v_p)  * xjac * theta * tstep * tstep &
                           + tgnum_T * 0.25d0 / BigR * vpar0**2                                                        &
                                     * rho * (T0_x * ps0_y - T0_y * ps0_x + F0 / BigR * T0_p)                          &
-                                    * (                            + F0 / BigR * v_p)  * xjac * theta * tstep * tstep
+                                    * (                            + F0 / BigR * v_p)  * xjac * theta * tstep * tstep  &
+                          !============================== Diamagnetic terms =======================
+                          + tauIC*F0/(1.256637d-6) * ( ((rho_x*T0 + rho*T0_x) * ps0_x + (rho_y*T0 + rho*T0_y) * ps0_y) * v_p/r0_corr  &
+                          - ((r0_x*T0 + r0*T0_x) * ps0_x + (r0_y*T0 + r0*T0_y) * ps0_y) * v_p/r0_corr**2 * rho  &
+                                           ) * xjac * theta * tstep  &
+                          - tauIC*gamma*F0/(1.256637d-6) * ( (rho_x * ps0_x + rho_y * ps0_y) * v_p*T0/r0_corr  &
+                          - (r0_x * ps0_x + r0_y * ps0_y) * v_p*T0/r0_corr**2 * rho  &
+                                                 ) * xjac * theta * tstep
   
                     amat_kn(var_T,var_rho) =                                                                          &
                     !=============== The ionization potential energy term=========================
@@ -4293,8 +4339,14 @@ do i=1,n_vertex_max
                           - v * tauIC * gamma * T * (2.d0 * (T0_y * r0 + T0 * r0_y)     * xjac                                          &
                           + BigR/r0_corr * ((T0_s * r0 + T0 * r0_s) * r0_t - (T0_t * r0 + T0 * r0_t) * r0_s))   * BigR * theta * tstep  &
                           - v * tauIC * gamma * T0 * (2.d0 * (T_y * r0 + T * r0_y)      * xjac                                          &
-                          + BigR/r0_corr * ((T_s * r0 + T * r0_s) * r0_t - (T_t * r0 + T * r0_t) * r0_s))       * BigR * theta * tstep
-
+                          + BigR/r0_corr * ((T_s * r0 + T * r0_s) * r0_t - (T_t * r0 + T * r0_t) * r0_s))       * BigR * theta * tstep  &
+                             
+                          + tauIC*F0/(1.256637d-6) * ( - ((r0_x*T + r0*T_x) * ps0_x + (r0_y*T + r0*T_y) * ps0_y) * v/r0_corr**2 * r0_p  &
+                          - r0_p*T * (ps0_x*(v_x/r0_corr - v/r0_corr**2 * r0_x) + ps0_y*(v_y/r0_corr - v/r0_corr**2 * r0_y))  &
+                                           ) * xjac * theta * tstep  &
+                          - tauIC*gamma*F0/(1.256637d-6) * ( - (r0_x * ps0_x + r0_y * ps0_y) * v*T/r0_corr**2 * r0_p  &
+                          - r0_p * (ps0_x*(v_x*T/r0_corr + v*T_x/r0_corr - v*T/r0_corr**2 * r0_x) + ps0_y*(v_y*T/r0_corr + v*T_y/r0_corr - v*T/r0_corr**2 * r0_y))  &
+                                                 ) * xjac * theta * tstep
   
                     amat_k(var_T,var_T) = + (ZK_par_T-ZK_prof) * BigR / BB2 * Bgrad_T_k_star * Bgrad_T_T * xjac * theta * tstep  &
                                           + dZK_par_dT * T     * BigR / BB2 * Bgrad_T_k_star * Bgrad_T   * xjac * theta * tstep  &
@@ -4313,7 +4365,10 @@ do i=1,n_vertex_max
                                     * (                            + F0 / BigR * v_p) * xjac * theta * tstep * tstep &
                           + tgnum_T * 0.25d0 / BigR * vpar0**2                                                            &
                                     * (r0+alpha_imp_bis*rimp0) * (T_x * ps0_y - T_y * ps0_x                  )                                  &
-                                    * (                                + F0 / BigR * v_p)  * xjac * theta * tstep * tstep
+                                    * (                                + F0 / BigR * v_p)  * xjac * theta * tstep * tstep  &
+                          !============================== Diamagnetic drift terms ==================================
+                          + tauIC*F0/(1.256637d-6) * ((r0_x*T + r0*T_x) * ps0_x + (r0_y*T + r0*T_y) * ps0_y) * v_p/r0_corr * xjac * theta * tstep  &
+                          - tauIC*gamma*F0/(1.256637d-6) * (r0_x * ps0_x + r0_y * ps0_y) * v_p*T/r0_corr * xjac * theta * tstep
   
                     amat_n(var_T,var_T) = + (ZK_par_T-ZK_prof) * BigR / BB2 * Bgrad_T_star   * Bgrad_T_T_n  * xjac * theta * tstep &
   
@@ -4323,7 +4378,10 @@ do i=1,n_vertex_max
                     !================= End ionization potential energy ===========================
     
                           + tgnum_T * 0.25d0 / BigR * vpar0**2                                                        &
-                          * (r0+alpha_imp_bis*rimp0) * ( + F0 / BigR * T_p) * ( v_x * ps0_y - v_y * ps0_x ) * xjac * theta * tstep * tstep
+                          * (r0+alpha_imp_bis*rimp0) * ( + F0 / BigR * T_p) * ( v_x * ps0_y - v_y * ps0_x ) * xjac * theta * tstep * tstep  &
+                          !============================== Diamagnetic drift terms ==================================
+                          - tauIC*F0/(1.256637d-6) * r0*T_p * (ps0_x*(v_x/r0_corr - v/r0_corr**2 * r0_x) + ps0_y*(v_y/r0_corr - v/r0_corr**2 * r0_y)) * xjac * theta * tstep  &
+                          - tauIC*gamma*F0/(1.256637d-6) * (r0_x * ps0_x + r0_y * ps0_y) * v*T_p/r0_corr * xjac * theta * tstep
 
                           amat_kn(var_T,var_T) = + (ZK_par_T-ZK_prof) * BigR / BB2 * Bgrad_T_k_star * Bgrad_T_T_n * xjac * theta * tstep &
                                            + ZK_prof * BigR   * (v_p*T_p /BigR**2 )                         * xjac * theta * tstep &
