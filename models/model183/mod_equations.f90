@@ -240,7 +240,7 @@ module mod_equations
     div_rhov_rho  = Bv_pbrack(rho/Bv2, Phi0) + Bv_parderiv(rho*vpar0) + Bv_pbrack(rho*vpar0, Psi0)
     div_rhov_vpar = Bv_parderiv(rho0*vpar) + Bv_pbrack(rho0*vpar, Psi0)
     ! Diamagnetic drift updates.
-#ifdef with_TiTe
+#ifdef WITH_TiTe
     div_rhov0     = div_rhov0    - tauIC*Bv_pbrack(rho0*T0_i, Bv2)/(Bv2*Bv2)
     div_rhov_rho  = div_rhov_rho - tauIC*Bv_pbrack(rho*T0_i, Bv2)/(Bv2*Bv2)
     div_rhov_Ti   =              - tauIC*Bv_pbrack(rho0*T_i, Bv2)/(Bv2*Bv2)
@@ -645,7 +645,7 @@ module mod_equations
                                             - vpar2_Phi*Bv_pbrack(Psi0, rho0*v)/2.0                           &     ! 1/2 rho grad(v^2)
                                             - v*div_rhov_Phi*vpar0*B2)                                              ! vpar div(rho v)                                                                
 
-      amat_semianalytic(var_vpar, var_rho)  = (1.d0 + zeta)*v*B2*rho*vpar0                                    &     ! rho B2 d(v_par)_dt 
+      amat_semianalytic(var_vpar, var_rho)  = (1.d0 + zeta)*v*B2*rho*vpar0                                    &     ! rho B2 d(v_par)_dt  ! I think this is vpar B2 d(rho)_dt
                                             - tstep*theta*(vpar2/2.0 * Bv_parderiv(v*rho)                     &     ! 1/2 rho grad(v^2)
                                             - vpar2*Bv_pbrack(Psi0, rho*v)/2.0                                &     ! 1/2 rho grad(v^2)
                                             - v*div_rhov_rho*vpar0*B2)                                              ! vpar div(rho v)                                                                  
@@ -679,17 +679,79 @@ module mod_equations
       else                                                                                                      
          rhs_semianalytic(var_vpar) = rhs_semianalytic(var_vpar)                                              &            
                                     - tstep * (v*Bv_parderiv(rho0*T0)                                         &     ! grad(p) component  8
-                                    + v*Bv_pbrack(rho0*T0,Psi0))                                                    ! grad(p) component  9 ! Why the sign change???!!!
+                                    + v*Bv_pbrack(rho0*T0,Psi0)                                               &     ! grad(p) component  9 ! Why the sign change???!!!
+                                    - v*tauIC*div_rhov0*inprod(T0*rho0,Psi0)/(2.d0*rho0_corr)                 &     ! v_* div(rho v)
+                                    - tauIC*Bv_pbrack(T0*rho0,v/Bv2)*inprod(Phi0,Psi0)/4.d0                   &     ! v_* grad(v_ExB)
+                                    + v*tauIC/(4.d0*Bv2)*(Bv_pbrack(T0*rho0,Psi0)*w0 - Bv_pbrack(T0*rho0,Phi0)*zj0                  &   ! v_* grad(v_ExB)
+                                    - inprod(T0*rho0,Bv_pbrack(Phi0,Psi0)) + inprod(T0*rho0,Bv2)*Bv_pbrack(Phi0,Psi0)/(2.d0*Bv2))   &   ! v_* grad(v_ExB)
+                                    - v*tauIC/(4.d0*Bv2*Bv2)*(Bv_pbrack(T0*rho0,Bv2)*inprod(Phi0,Psi0) - inprod(T0*rho0,Bv2)*Bv_pbrack(Phi0,Psi0)/2.d0  &  ! v_* grad(v_ExB)
+                                    + Bv_parderiv(Bv2)*inprod(T0*rho0,Phi0) - Bv_pbrack(T0*rho0,Phi0)*inprod(Bv2,Psi0))                                 &  ! v_* grad(v_ExB)
+                                    - v*tauIC/(2.d0*Bv2)*(inprod(T0*rho0,dx(chi))*dx(Phi0) + inprod(T0*rho0,dy(chi))*dy(Phi0)               &  ! v_* grad(v_ExB)
+                                    + inprod(T0*rho0,dp(chi)/R)*dp(Phi0)/R - inprod(T0*rho0,Bv2)*Bv_parderiv(Phi0)/(2.d0*Bv2))              &  ! v_* grad(v_ExB)
+                                    - v*tauIC/(2.d0*Bv2*R*R*R)*(dp(T0*rho0)-Bv_parderiv(T0*rho0)*dp(chi)/Bv2)*(dx(chi)*dp(Phi0)-dp(chi)*dx(Phi0))  &  ! v_* grad(v_ExB)
+                                    ) &
+                                    - zeta*v*tauIC*(delta_rho/rho0_corr)*inprod(rho0*T0,Psi0)/2.d0                  ! v_* B2 d(rho)/dt
                                                                                                               
          amat_semianalytic(var_vpar, var_Psi) = amat_semianalytic(var_vpar, var_Psi)                          &   
-                                              + tstep*theta*(v*Bv_pbrack(rho0*T0,Psi))                              ! grad(p) component
+                                              + tstep*theta*(v*Bv_pbrack(rho0*T0,Psi)                         &     ! grad(p) component
+                                              - v*tauIC*(div_rhov0*inprod(T0*rho0,Psi) + div_rhov_Psi*inprod(T0*rho0,Psi0))/(2.d0*rho0_corr)  &   ! v_* div(rho v)
+                                              - tauIC*Bv_pbrack(T0*rho0,v/Bv2)*inprod(Phi0,Psi)/4.d0          &     ! v_* grad(v_ExB)
+                                              + v*tauIC/(4.d0*Bv2)*(Bv_pbrack(T0*rho0,Psi)*w0                                               &   ! v_* grad(v_ExB)
+                                              - inprod(T0*rho0,Bv_pbrack(Phi0,Psi)) + inprod(T0*rho0,Bv2)*Bv_pbrack(Phi0,Psi)/(2.d0*Bv2))   &   ! v_* grad(v_ExB)
+                                              - v*tauIC/(4.d0*Bv2*Bv2)*(Bv_pbrack(T0*rho0,Bv2)*inprod(Phi0,Psi) - inprod(T0*rho0,Bv2)*Bv_pbrack(Phi0,Psi)/2.d0  &  ! v_* grad(v_ExB)
+                                              - Bv_pbrack(T0*rho0,Phi0)*inprod(Bv2,Psi))                                                                        &  ! v_* grad(v_ExB)
+                                              )
+
+         amat_semianalytic(var_vpar, var_Phi) = amat_semianalytic(var_vpar, var_Phi)                                      &
+                                              + tstep*theta*(-v*tauIC*div_rhov_Phi*inprod(T0*rho0,Psi0)/(2.d0*rho0_corr)  &   ! v_* div(rho v)
+                                              - tauIC*Bv_pbrack(T0*rho0,v/Bv2)*inprod(Phi,Psi0)/4.d0                      &   ! v_* grad(v_ExB)
+                                              + v*tauIC/(4.d0*Bv2)*(- Bv_pbrack(T0*rho0,Phi)*zj0                                            &   ! v_* grad(v_ExB)
+                                              - inprod(T0*rho0,Bv_pbrack(Phi,Psi0)) + inprod(T0*rho0,Bv2)*Bv_pbrack(Phi,Psi0)/(2.d0*Bv2))   &   ! v_* grad(v_ExB)
+                                              - v*tauIC/(4.d0*Bv2*Bv2)*(Bv_pbrack(T0*rho0,Bv2)*inprod(Phi,Psi0) - inprod(T0*rho0,Bv2)*Bv_pbrack(Phi,Psi0)/2.d0  &  ! v_* grad(v_ExB)
+                                              + Bv_parderiv(Bv2)*inprod(T0*rho0,Phi) - Bv_pbrack(T0*rho0,Phi)*inprod(Bv2,Psi0))                                 &  ! v_* grad(v_ExB)
+                                              - v*tauIC/(2.d0*Bv2)*(inprod(T0*rho0,dx(chi))*dx(Phi) + inprod(T0*rho0,dy(chi))*dy(Phi)               &  ! v_* grad(v_ExB)
+                                              + inprod(T0*rho0,dp(chi)/R)*dp(Phi)/R - inprod(T0*rho0,Bv2)*Bv_parderiv(Phi)/(2.d0*Bv2))              &  ! v_* grad(v_ExB)
+                                              - v*tauIC/(2.d0*Bv2*R*R*R)*(dp(T0*rho0)-Bv_parderiv(T0*rho0)*dp(chi)/Bv2)*(dx(chi)*dp(Phi)-dp(chi)*dx(Phi))  &  ! v_* grad(v_ExB)
+                                              )
+         
                                                                                                                    
          amat_semianalytic(var_vpar, var_rho) = amat_semianalytic(var_vpar, var_rho)                          & 
                                               + tstep*theta*(v*Bv_parderiv(rho*T0)                            &     ! grad(p) component
-                                              + v*Bv_pbrack(rho*T0,Psi0))                                           ! grad(p) component
+                                              + v*Bv_pbrack(rho*T0,Psi0)                                      &     ! grad(p) component
+                                              - v*tauIC*(div_rhov_rho*inprod(T0*rho0,Psi0) + div_rhov0*inprod(T0*rho,Psi0) - div_rhov0*inprod(T0*rho0,Psi0)*drho0_corr_dn*rho/rho0_corr)/(2.d0*rho0_corr)  & ! v_* div(rho v)
+                                              - tauIC*Bv_pbrack(T0*rho,v/Bv2)*inprod(Phi0,Psi0)/4.d0          &     ! v_* grad(v_ExB)
+                                              + v*tauIC/(4.d0*Bv2)*(Bv_pbrack(T0*rho,Psi0)*w0 - Bv_pbrack(T0*rho,Phi0)*zj0                  &   ! v_* grad(v_ExB)
+                                              - inprod(T0*rho,Bv_pbrack(Phi0,Psi0)) + inprod(T0*rho,Bv2)*Bv_pbrack(Phi0,Psi0)/(2.d0*Bv2))   &   ! v_* grad(v_ExB)
+                                              - v*tauIC/(4.d0*Bv2*Bv2)*(Bv_pbrack(T0*rho,Bv2)*inprod(Phi0,Psi0) - inprod(T0*rho,Bv2)*Bv_pbrack(Phi0,Psi0)/2.d0  &  ! v_* grad(v_ExB)
+                                              + Bv_parderiv(Bv2)*inprod(T0*rho,Phi0) - Bv_pbrack(T0*rho,Phi0)*inprod(Bv2,Psi0))                                 &  ! v_* grad(v_ExB)
+                                              - v*tauIC/(2.d0*Bv2)*(inprod(T0*rho,dx(chi))*dx(Phi0) + inprod(T0*rho,dy(chi))*dy(Phi0)                 &  ! v_* grad(v_ExB)
+                                              + inprod(T0*rho,dp(chi)/R)*dp(Phi0)/R - inprod(T0*rho,Bv2)*Bv_parderiv(Phi0)/(2.d0*Bv2))                &  ! v_* grad(v_ExB)
+                                              - v*tauIC/(2.d0*Bv2*R*R*R)*(dp(T0*rho)-Bv_parderiv(T0*rho)*dp(chi)/Bv2)*(dx(chi)*dp(Phi0)-dp(chi)*dx(Phi0))    &  ! v_* grad(v_ExB)
+                                              ) &
+                                              - (1.d0+zeta)*v*tauIC*(rho/rho0_corr)*inprod(T0*rho0,Psi0)/2.d0       ! v_* B2 d(rho)/dt
+
+         amat_semianalytic(var_vpar, var_vpar) = amat_semianalytic(var_vpar, var_vpar)                                      & 
+                                               + tstep*theta*(-v*tauIC*div_rhov_vpar*inprod(T0*rho0,Psi0)/(2.d0*rho0_corr))    ! v_* div(rho v)
+                                               
                                                                                                                    
          amat_semianalytic(var_vpar, var_T)   = tstep*theta*(v*Bv_parderiv(rho0*T)                            &     ! grad(p) component
-                                              + v*Bv_pbrack(rho0*T,Psi0))                                           ! grad(p) component
+                                              + v*Bv_pbrack(rho0*T,Psi0)                                      &     ! grad(p) component
+                                              + v*div_rhov_T*vpar0*B2                                         &     ! vpar div(rho v)
+                                              - v*tauIC*(div_rhov_T*inprod(T0*rho0,Psi0) + div_rhov0*inprod(T*rho0,Psi0))/(2.d0*rho0_corr)  &   ! v_* div(rho v)
+                                              - tauIC*Bv_pbrack(T*rho0,v/Bv2)*inprod(Phi0,Psi0)/4.d0          &     ! v_* grad(v_ExB)
+                                              + v*tauIC/(4.d0*Bv2)*(Bv_pbrack(T*rho0,Psi0)*w0 - Bv_pbrack(T*rho0,Phi0)*zj0                  &   ! v_* grad(v_ExB)
+                                              - inprod(T*rho0,Bv_pbrack(Phi0,Psi0)) + inprod(T*rho0,Bv2)*Bv_pbrack(Phi0,Psi0)/(2.d0*Bv2))   &   ! v_* grad(v_ExB)
+                                              - v*tauIC/(4.d0*Bv2*Bv2)*(Bv_pbrack(T*rho0,Bv2)*inprod(Phi0,Psi0) - inprod(T*rho0,Bv2)*Bv_pbrack(Phi0,Psi0)/2.d0  &  ! v_* grad(v_ExB)
+                                              + Bv_parderiv(Bv2)*inprod(T*rho0,Phi0) - Bv_pbrack(T*rho0,Phi0)*inprod(Bv2,Psi0))                                 &  ! v_* grad(v_ExB)
+                                              - v*tauIC/(2.d0*Bv2)*(inprod(T*rho0,dx(chi))*dx(Phi0) + inprod(T*rho0,dy(chi))*dy(Phi0)                 &  ! v_* grad(v_ExB)
+                                              + inprod(T*rho0,dp(chi)/R)*dp(Phi0)/R - inprod(T*rho0,Bv2)*Bv_parderiv(Phi0)/(2.d0*Bv2))                &  ! v_* grad(v_ExB)
+                                              - v*tauIC/(2.d0*Bv2*R*R*R)*(dp(T*rho0)-Bv_parderiv(T*rho0)*dp(chi)/Bv2)*(dx(chi)*dp(Phi0)-dp(chi)*dx(Phi0))    &  ! v_* grad(v_ExB)
+                                              )
+
+         amat_semianalytic(var_vpar, var_w)   = tstep*theta*v*tauIC/(4.d0*Bv2)*(Bv_pbrack(T0*rho0,Psi0)*w)    ! v_* grad(v_ExB)
+         
+         amat_semianalytic(var_vpar, var_zj)  = -tstep*theta*v*tauIC/(4.d0*Bv2)*(Bv_pbrack(T0*rho0,Phi0)*zj)   ! v_* grad(v_ExB)
+
       end if 
     endif
 
