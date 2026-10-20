@@ -30,6 +30,11 @@ real*8     :: ps0_s, ps0_t, p_s, p_t, zj0_s, zj0_t,R_s, R_t, ps0_x, ps0_y, Z_s, 
 logical    :: xpoint2
 real*8     :: zV, dV_dpsi, dV_dpsi2, dV_dz, dV_dz2, dV_dpsi_dz, dV_dpsi3, dV_dpsi2_dz, dV_dpsi_dz2
 real*8     :: Omega, dOmega_dpsi, dOmega_dz, dOmega_dpsi2, dOmega_dz2, dOmega_dpsi_dz
+! --- u0rho patch (021_castor_comparison, 2026-10-20): table of G(psi) = int_{psi_bnd}^{psi} (dp/dpsi')/rho dpsi'
+integer, parameter   :: n_u0tab = 20001
+integer              :: k_u0
+real*8, allocatable  :: u0tab_psi(:), u0tab_f(:), u0tab_G(:)
+real*8               :: u0_psi_lo, u0_psi_hi, u0_G_bnd, u0_wgt, u0_zG, u0_zf, u0_df
 if (my_id .eq. 0) then
   write(*,*) '***************************************'
   write(*,*) '*      initial conditions  (600)      *'
@@ -39,6 +44,58 @@ endif
 ! --- This old projection method should be replaced by a direct solve on the elements
 ! --- It is much cleaner and more generic
 if ( (my_id .eq. 0) .and. (n_order .le. 3) ) then
+
+  ! --- u0rho patch (021_castor_comparison, 2026-10-20). Equilibrium flow with the ion perpendicular flow exactly zero.
+  ! --- Model 600's ion perpendicular flow is rho*grad(u) + 2*tauIC*grad(Pi_i) with Pi_i = rho*T/2 (mod_elt_matrix_fft.f90
+  ! --- l.1632, 1762, 2455), so it vanishes for du/dpsi = -tauIC*(dp/dpsi)/rho. The stock initialisation, u0 = -tauIC*p,
+  ! --- is exact only where rho = 1 (it leaves R = 1 - rho). Here u0(psi) = -tauIC*G(psi), G(psi) = int_{psi_bnd}^{psi}
+  ! --- (dp/dpsi')/rho dpsi' (zero on the boundary), tabulated once in psi from the same profile routines; w0 then comes
+  ! --- from the stock inverse Poisson solve further down. Valid only for profiles of psi alone (no X-point).
+  if (tauIC .ne. 0.d0) then
+    if (xpoint2) then
+      write(*,*) 'u0rho patch: profiles depend on Z with an X-point, G(psi) is not defined; stopping'
+      stop
+    endif
+    allocate(u0tab_psi(n_u0tab), u0tab_f(n_u0tab), u0tab_G(n_u0tab))
+    u0_psi_lo = min(ES%psi_axis, ES%psi_bnd)
+    u0_psi_hi = max(ES%psi_axis, ES%psi_bnd)
+    do i = 1, node_list%n_nodes
+      u0_psi_lo = min(u0_psi_lo, node_list%node(i)%values(1,1,var_psi))
+      u0_psi_hi = max(u0_psi_hi, node_list%node(i)%values(1,1,var_psi))
+    enddo
+    do k_u0 = 1, n_u0tab
+      u0tab_psi(k_u0) = u0_psi_lo + (u0_psi_hi - u0_psi_lo) * dble(k_u0 - 1) / dble(n_u0tab - 1)
+      psi = u0tab_psi(k_u0)
+      call density(xpoint2, xcase2, 0.d0, ES%Z_xpoint, psi, ES%psi_axis, ES%psi_bnd, zn, dn_dpsi, dn_dz, dn_dpsi2, dn_dz2, &
+                   dn_dpsi_dz, dn_dpsi3, dn_dpsi_dz2, dn_dpsi2_dz)
+      if (zn .le. 0.d0) then
+        write(*,*) 'u0rho patch: density <= 0 at psi = ', psi, '; stopping'
+        stop
+      endif
+      if ( with_TiTe ) then
+        call temperature_i(xpoint2, xcase2, 0.d0, ES%Z_xpoint, psi, ES%psi_axis, ES%psi_bnd, zTi, dTi_dpsi, dTi_dz, dTi_dpsi2, &
+                           dTi_dz2, dTi_dpsi_dz, dTi_dpsi3, dTi_dpsi_dz2, dTi_dpsi2_dz)
+        call temperature_e(xpoint2, xcase2, 0.d0, ES%Z_xpoint, psi, ES%psi_axis, ES%psi_bnd, zTe, dTe_dpsi, dTe_dz, dTe_dpsi2, &
+                           dTe_dz2, dTe_dpsi_dz, dTe_dpsi3, dTe_dpsi_dz2, dTe_dpsi2_dz)
+        u0tab_f(k_u0) = (zn * (dTi_dpsi + dTe_dpsi) + dn_dpsi * (zTi + zTe)) / zn
+      else
+        call temperature(xpoint2, xcase2, 0.d0, ES%Z_xpoint, psi, ES%psi_axis, ES%psi_bnd, zT, dT_dpsi, dT_dz, dT_dpsi2, &
+                         dT_dz2, dT_dpsi_dz, dT_dpsi3, dT_dpsi_dz2, dT_dpsi2_dz)
+        u0tab_f(k_u0) = (zn * dT_dpsi + dn_dpsi * zT) / zn          ! p = rho*T, as zp below (Ti = Te = T/2)
+      endif
+    enddo
+    u0tab_G(1) = 0.d0
+    do k_u0 = 2, n_u0tab
+      u0tab_G(k_u0) = u0tab_G(k_u0-1) + 0.5d0 * (u0tab_f(k_u0) + u0tab_f(k_u0-1)) * (u0tab_psi(k_u0) - u0tab_psi(k_u0-1))
+    enddo
+    u0_wgt   = (ES%psi_bnd - u0_psi_lo) / (u0_psi_hi - u0_psi_lo) * dble(n_u0tab - 1)
+    k_u0     = min(max(int(u0_wgt) + 1, 1), n_u0tab - 1)
+    u0_wgt   = u0_wgt - dble(k_u0 - 1)
+    u0_G_bnd = (1.d0 - u0_wgt) * u0tab_G(k_u0) + u0_wgt * u0tab_G(k_u0+1)
+    u0tab_G  = u0tab_G - u0_G_bnd
+    write(*,'(A,ES13.5,A,2ES13.5,A,I6,A)') ' u0rho patch: u0 = -tauIC*int(dp/dpsi/rho), tauIC =', tauIC, ', psi from', &
+                                           u0_psi_lo, u0_psi_hi, ',', n_u0tab, ' points'
+  endif
 
   do i=1,node_list%n_nodes
 
@@ -157,14 +214,30 @@ if ( (my_id .eq. 0) .and. (n_order .le. 3) ) then
 
     end if
 
-    node_list%node(i)%values(1,1,var_u) = - tauIC * zp 
-    node_list%node(i)%values(1,2,var_u) = - tauIC * (dp_dpsi  * node_list%node(i)%values(1,2,var_psi) + dp_dz * node_list%node(i)%x(1,2,2))
-    node_list%node(i)%values(1,3,var_u) = - tauIC * (dp_dpsi  * node_list%node(i)%values(1,3,var_psi) + dp_dz * node_list%node(i)%x(1,3,2))
-    node_list%node(i)%values(1,4,var_u) = - tauIC * (dP_dpsi  * node_list%node(i)%values(1,4,var_psi) + dP_dz * node_list%node(i)%x(1,4,2) &
-                                    + dP_dpsi2   * node_list%node(i)%values(1,2,var_psi) * node_list%node(i)%values(1,3,var_psi)  &
-                                    + dP_dz2     * node_list%node(i)%x(1,2,2)        * node_list%node(i)%x(1,3,2)               &
-                                    + dP_dpsi_dz * node_list%node(i)%values(1,3,var_psi) * node_list%node(i)%x(1,2,2)         &
-                                    + dP_dpsi_dz * node_list%node(i)%values(1,2,var_psi) * node_list%node(i)%x(1,3,2) )
+    if (tauIC .ne. 0.d0) then
+      ! --- u0rho patch: u0 = -tauIC*G(psi), dG/dpsi = (dp/dpsi)/rho; chain rule as for the profiles above (no Z dependence)
+      u0_wgt  = (psi - u0_psi_lo) / (u0_psi_hi - u0_psi_lo) * dble(n_u0tab - 1)
+      k_u0    = min(max(int(u0_wgt) + 1, 1), n_u0tab - 1)
+      u0_wgt  = u0_wgt - dble(k_u0 - 1)
+      u0_zG   = (1.d0 - u0_wgt) * u0tab_G(k_u0) + u0_wgt * u0tab_G(k_u0+1)
+      u0_zf   = dp_dpsi / zn
+      u0_df   = dp_dpsi2 / zn - dp_dpsi * dn_dpsi / zn**2
+      node_list%node(i)%values(1,1,var_u) = - tauIC * u0_zG
+      node_list%node(i)%values(1,2,var_u) = - tauIC * u0_zf * node_list%node(i)%values(1,2,var_psi)
+      node_list%node(i)%values(1,3,var_u) = - tauIC * u0_zf * node_list%node(i)%values(1,3,var_psi)
+      node_list%node(i)%values(1,4,var_u) = - tauIC * ( u0_zf * node_list%node(i)%values(1,4,var_psi)                          &
+                                          + u0_df * node_list%node(i)%values(1,2,var_psi) * node_list%node(i)%values(1,3,var_psi) )
+    else
+      ! --- stock initialisation (u0 = -tauIC*p, i.e. 0 for tauIC = 0)
+      node_list%node(i)%values(1,1,var_u) = - tauIC * zp 
+      node_list%node(i)%values(1,2,var_u) = - tauIC * (dp_dpsi  * node_list%node(i)%values(1,2,var_psi) + dp_dz * node_list%node(i)%x(1,2,2))
+      node_list%node(i)%values(1,3,var_u) = - tauIC * (dp_dpsi  * node_list%node(i)%values(1,3,var_psi) + dp_dz * node_list%node(i)%x(1,3,2))
+      node_list%node(i)%values(1,4,var_u) = - tauIC * (dP_dpsi  * node_list%node(i)%values(1,4,var_psi) + dP_dz * node_list%node(i)%x(1,4,2) &
+                                      + dP_dpsi2   * node_list%node(i)%values(1,2,var_psi) * node_list%node(i)%values(1,3,var_psi)  &
+                                      + dP_dz2     * node_list%node(i)%x(1,2,2)        * node_list%node(i)%x(1,3,2)               &
+                                      + dP_dpsi_dz * node_list%node(i)%values(1,3,var_psi) * node_list%node(i)%x(1,2,2)         &
+                                      + dP_dpsi_dz * node_list%node(i)%values(1,2,var_psi) * node_list%node(i)%x(1,3,2) )
+    endif
  
     node_list%node(i)%values(1,:,var_w) = 0.d0        ! vorticity (will be filled just below with inverse Poisson)
 
@@ -218,6 +291,8 @@ if ( (my_id .eq. 0) .and. (n_order .le. 3) ) then
     node_list%node(i)%deltas = 0.d0
 
   enddo
+
+  if (allocated(u0tab_psi)) deallocate(u0tab_psi, u0tab_f, u0tab_G)
 
 endif ! if n_order<=3
 
