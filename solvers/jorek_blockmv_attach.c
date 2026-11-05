@@ -1,25 +1,12 @@
-/* Threaded, block-aware matvec for the physics PC's (MPI)AIJ operators.
+/* Threaded, block-aware MatMult / MatMultAdd for the physics PC's (MPI)AIJ operators.
  *
- * PETSc's AIJ MatMult runs on one thread per rank, and in JOREK's hybrid runs
- * (8-16 OpenMP threads per rank) the GMG level matvecs are most of a V-cycle.
- * jorek_blockmv_attach replaces MATOP_MULT and MATOP_MULT_ADD of one AIJ
- * matrix with an OpenMP kernel and leaves everything else alone: the type,
- * the CSR arrays (so value-map refills and MatPtAP(MAT_REUSE_MATRIX) keep
- * working), MatCreateSubMatrices, MatGetDiagonal, MatMultTranspose.
- *
- * Structure used: the packed GMG layout keeps the slots of one (field, scalar
- * DOF) in consecutive rows, and the four C1 DOFs (u, a, b, c) of a node next
- * to each other, all 4 bs rows of a (field, node) with one column pattern.
- * Runs of consecutive rows with one pattern (up to 4 bs: a node's, shorter
- * at Dirichlet rows or with fewer slots coupled) read their column indices
- * once, and the kernel takes them four rows at a time, so each gathered x
- * serves four rows.
- *
- * For an MPIAIJ matrix the kernel does the ghost update itself, with its own
- * scatter built from the off-diagonal part's column map, and overlaps it with
- * the diagonal part exactly as MatMult_MPIAIJ does. The plan (blocks, thread
- * partition, scatter) is rebuilt when the nonzero pattern or the thread count
- * changes.
+ * jorek_blockmv_attach replaces MATOP_MULT and MATOP_MULT_ADD of one MATSEQAIJ or
+ * MATMPIAIJ matrix by an OpenMP kernel; the type, the CSR arrays (value-map refills,
+ * MatPtAP reuse) and all other operations stay PETSc's. Runs of up to 4 bs consecutive
+ * rows with one column pattern (packed GMG layout: a node's four C1 DOFs x bs slots)
+ * read their column indices once and are taken four rows at a time. MPIAIJ: own ghost
+ * scatter from the off-diagonal column map, overlapped with the diagonal part as in
+ * MatMult_MPIAIJ. Requires PETSc >= 3.26.
  */
 #if defined(USE_PETSC)
 #include <string.h>
@@ -29,34 +16,50 @@
 #endif
 
 #define BMV_KEY    "jorek_blockmv"
+#define BMV_REJ    "jorek_blockmv_rejected" /* the check failed once: keep PETSc's kernel */
 #define BMV_SERIAL 20000 /* below this many local nonzeros: one thread */
 
 typedef struct {
   PetscInt  n;      /* local rows */
   PetscInt  nnz;
+  PetscInt  lmax;   /* longest row */
   PetscInt  nb;     /* block rows */
   PetscInt *bst;    /* first row of block row b, bst[nb] = n */
-  PetscInt  nt;     /* threads the partition is for */
+  PetscInt  nt;     /* threads of the partition */
   PetscInt *tb;     /* thread t does block rows tb[t] .. tb[t+1]-1 */
 } bmv_part;
 
 typedef struct {
   PetscInt         bs;
-  PetscObjectState nzstate;
+  PetscInt         nthr;     /* thread count the partitions are for */
+  PetscObjectId    id;       /* blocks and scatter: for M's id and nonzero state, */
+  PetscObjectState nzstate;  /* the same on all ranks (their rebuild is collective) */
   PetscBool        mpi;
-  bmv_part         pd, po;  /* diagonal part, off-diagonal part */
-  Vec              lvec;    /* ghost values (MPI only) */
+  bmv_part         pd, po;   /* diagonal part, off-diagonal part */
+  Vec              lvec;     /* ghost values (MPI only) */
   VecScatter       sct;
-  PetscLogEvent    ev;
 } bmv_ctx;
 
 static PetscLogEvent bmv_event = -1;
 
-static void part_free(bmv_part *p)
+/* CSR arrays of a SeqAIJ matrix, in host memory. */
+static PetscErrorCode csr(Mat M, const PetscInt **i, const PetscInt **j, PetscScalar **a)
 {
-  PetscFree(p->bst);
-  PetscFree(p->tb);
-  p->n = p->nnz = p->nb = p->nt = 0;
+  PetscMemType mt;
+
+  PetscFunctionBegin;
+  PetscCall(MatSeqAIJGetCSRAndMemType(M, i, j, a, &mt));
+  PetscCheck(PetscMemTypeHost(mt), PETSC_COMM_SELF, PETSC_ERR_SUP, "blockmv: needs host CSR arrays");
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+static PetscErrorCode part_free(bmv_part *p)
+{
+  PetscFunctionBegin;
+  PetscCall(PetscFree(p->bst));
+  PetscCall(PetscFree(p->tb));
+  p->n = p->nnz = p->lmax = p->nb = p->nt = 0;
+  PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 static PetscInt max_threads(void)
@@ -68,17 +71,16 @@ static PetscInt max_threads(void)
 #endif
 }
 
-/* Block rows of M (SeqAIJ) and an nnz-balanced thread partition of them. */
-static PetscErrorCode part_build(Mat M, PetscInt bs, bmv_part *p)
+/* Block rows of M (SeqAIJ). */
+static PetscErrorCode part_blocks(Mat M, PetscInt bs, bmv_part *p)
 {
   const PetscInt *ia, *ja;
-  PetscInt        n, i, r, b, t, nnz, nt;
-  PetscBool       done;
+  PetscInt        n, i, r;
 
   PetscFunctionBegin;
-  part_free(p);
-  PetscCall(MatGetRowIJ(M, 0, PETSC_FALSE, PETSC_FALSE, &n, &ia, &ja, &done));
-  PetscCheck(done, PETSC_COMM_SELF, PETSC_ERR_SUP, "blockmv: no row IJ access");
+  PetscCall(part_free(p));
+  PetscCall(MatGetLocalSize(M, &n, NULL));
+  PetscCall(csr(M, &ia, &ja, NULL));
   PetscCall(PetscMalloc1(n + 1, &p->bst));
   p->n = n;
   p->nb = 0;
@@ -88,37 +90,44 @@ static PetscErrorCode part_build(Mat M, PetscInt bs, bmv_part *p)
       if (ia[i + r + 1] - ia[i + r] != len) break;
       if (memcmp(ja + ia[i], ja + ia[i + r], (size_t)len * sizeof(PetscInt))) break;
     }
+    p->lmax = PetscMax(p->lmax, len);
     p->bst[p->nb++] = i;
     i += r;
   }
   p->bst[p->nb] = n;
-  nnz = ia[n];
-  p->nnz = nnz;
-  nt  = (nnz < BMV_SERIAL) ? 1 : max_threads();
+  p->nnz = ia[n];
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+/* nnz-balanced partition of the block rows for nthr threads (one below BMV_SERIAL nonzeros). */
+static PetscErrorCode part_threads(Mat M, PetscInt nthr, bmv_part *p)
+{
+  const PetscInt *ia;
+  PetscInt        b, t, nt = (p->nnz < BMV_SERIAL) ? 1 : nthr;
+
+  PetscFunctionBegin;
+  PetscCall(PetscFree(p->tb));
+  PetscCall(csr(M, &ia, NULL, NULL));
   p->nt = nt;
   PetscCall(PetscMalloc1(nt + 1, &p->tb));
   p->tb[0] = 0;
   for (t = 1, b = 0; t < nt; t++) {
-    PetscInt target = (PetscInt)(((PetscInt64)nnz * t) / nt);
+    PetscInt target = (PetscInt)(((PetscInt64)p->nnz * t) / nt);
     while (b < p->nb && ia[p->bst[b]] < target) b++;
     p->tb[t] = b;
   }
   p->tb[nt] = p->nb;
-  PetscCall(MatRestoreRowIJ(M, 0, PETSC_FALSE, PETSC_FALSE, &n, &ia, &ja, &done));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 /* y = A x (add = 0) or y += A x (add = 1) over the rows of p. */
 static PetscErrorCode part_apply(Mat M, const bmv_part *p, const PetscScalar *x, PetscScalar *y, int add)
 {
-  const PetscInt    *ia, *ja;
-  const PetscScalar *a;
-  PetscInt           n;
-  PetscBool          done;
+  const PetscInt *ia, *ja;
+  PetscScalar    *aw;
 
   PetscFunctionBegin;
-  PetscCall(MatGetRowIJ(M, 0, PETSC_FALSE, PETSC_FALSE, &n, &ia, &ja, &done));
-  PetscCall(MatSeqAIJGetArrayRead(M, &a));
+  PetscCall(csr(M, &ia, &ja, &aw));
 #if defined(_OPENMP)
   #pragma omp parallel num_threads(p->nt) if (p->nt > 1)
 #endif
@@ -130,6 +139,7 @@ static PetscErrorCode part_apply(Mat M, const bmv_part *p, const PetscScalar *x,
 #else
     const PetscInt t0 = 0, dt = 1;
 #endif
+    const PetscScalar *a = aw;
     for (PetscInt t = t0; t < p->nt; t += dt)
     for (PetscInt b = p->tb[t]; b < p->tb[t + 1]; b++) {
       const PetscInt i0 = p->bst[b], w = p->bst[b + 1] - i0;
@@ -176,8 +186,6 @@ static PetscErrorCode part_apply(Mat M, const bmv_part *p, const PetscScalar *x,
       }
     }
   }
-  PetscCall(MatSeqAIJRestoreArrayRead(M, &a));
-  PetscCall(MatRestoreRowIJ(M, 0, PETSC_FALSE, PETSC_FALSE, &n, &ia, &ja, &done));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -186,47 +194,58 @@ static PetscErrorCode ctx_destroy(void *pctx)
   bmv_ctx *c = *(bmv_ctx **)pctx;
 
   PetscFunctionBegin;
-  part_free(&c->pd);
-  part_free(&c->po);
+  PetscCall(part_free(&c->pd));
+  PetscCall(part_free(&c->po));
   PetscCall(VecDestroy(&c->lvec));
   PetscCall(VecScatterDestroy(&c->sct));
   PetscCall(PetscFree(c));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-/* (Re)build the plan if the pattern or the thread count changed. */
+/* Blocks and scatter for a new pattern (collective: keyed on M's id and
+   nonzero state), thread partitions for a new thread count (local). */
 static PetscErrorCode ctx_refresh(Mat M, bmv_ctx *c)
 {
   PetscObjectState st;
+  PetscObjectId    id;
   Mat              Ad = M, Ao = NULL;
   const PetscInt  *cmap = NULL;
+  const PetscInt   nthr = max_threads();
 
   PetscFunctionBegin;
   PetscCall(MatGetNonzeroState(M, &st));
-  if (st == c->nzstate && c->pd.n >= 0 && (c->pd.nt == 1 || c->pd.nt == max_threads())) PetscFunctionReturn(PETSC_SUCCESS);
+  PetscCall(PetscObjectGetId((PetscObject)M, &id));
   if (c->mpi) PetscCall(MatMPIAIJGetSeqAIJ(M, &Ad, &Ao, &cmap));
-  PetscCall(part_build(Ad, c->bs, &c->pd));
-  PetscCall(VecDestroy(&c->lvec));
-  PetscCall(VecScatterDestroy(&c->sct));
-  if (c->mpi) {
-    PetscInt nghost;
-    IS       isg;
-    Vec      xg;
-    PetscCall(part_build(Ao, c->bs, &c->po));
-    PetscCall(MatGetSize(Ao, NULL, &nghost));
-    PetscCall(VecCreateSeq(PETSC_COMM_SELF, nghost, &c->lvec));
-    PetscCall(ISCreateGeneral(PETSC_COMM_SELF, nghost, cmap, PETSC_USE_POINTER, &isg));
-    PetscCall(MatCreateVecs(M, &xg, NULL));
-    PetscCall(VecScatterCreate(xg, isg, c->lvec, NULL, &c->sct));
-    PetscCall(VecDestroy(&xg));
-    PetscCall(ISDestroy(&isg));
+  if (st != c->nzstate || id != c->id) {
+    PetscCall(part_blocks(Ad, c->bs, &c->pd));
+    PetscCall(VecDestroy(&c->lvec));
+    PetscCall(VecScatterDestroy(&c->sct));
+    if (c->mpi) {
+      PetscInt nghost;
+      IS       isg;
+      Vec      xg;
+      PetscCall(part_blocks(Ao, c->bs, &c->po));
+      PetscCall(MatGetSize(Ao, NULL, &nghost));
+      PetscCall(VecCreateSeq(PETSC_COMM_SELF, nghost, &c->lvec));
+      PetscCall(ISCreateGeneral(PETSC_COMM_SELF, nghost, cmap, PETSC_USE_POINTER, &isg));
+      PetscCall(MatCreateVecs(M, &xg, NULL));
+      PetscCall(VecScatterCreate(xg, isg, c->lvec, NULL, &c->sct));
+      PetscCall(VecDestroy(&xg));
+      PetscCall(ISDestroy(&isg));
+    }
+    c->nzstate = st;
+    c->id      = id;
+    c->nthr    = -1;
   }
-  c->nzstate = st;
+  if (nthr != c->nthr) {
+    PetscCall(part_threads(Ad, nthr, &c->pd));
+    if (c->mpi) PetscCall(part_threads(Ao, nthr, &c->po));
+    c->nthr = nthr;
+  }
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-/* The plan of M, created with bs = 1 if M has none: MatDuplicate copies the
- * ops table but not the composed plan. */
+/* M's plan, created by the first attach (a MatDuplicate has PETSc's ops again). */
 static PetscErrorCode get_ctx(Mat M, PetscInt bs, bmv_ctx **c)
 {
   PetscContainer cont;
@@ -239,9 +258,14 @@ static PetscErrorCode get_ctx(Mat M, PetscInt bs, bmv_ctx **c)
     PetscCall(PetscNew(c));
     (*c)->bs      = bs;
     (*c)->nzstate = -1;
-    (*c)->pd.n    = -1;
+    (*c)->id      = -1;
+    (*c)->nthr    = -1;
     PetscCall(PetscObjectTypeCompare((PetscObject)M, MATMPIAIJ, &(*c)->mpi));
-    PetscCall(PetscObjectContainerCompose((PetscObject)M, BMV_KEY, *c, (PetscCtxDestroyFn *)ctx_destroy));
+    PetscCall(PetscObjectContainerCompose((PetscObject)M, BMV_KEY, *c, ctx_destroy));
+  }
+  if ((*c)->bs != bs) {
+    (*c)->bs      = bs;
+    (*c)->nzstate = -1;
   }
   PetscCall(ctx_refresh(M, *c));
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -250,13 +274,17 @@ static PetscErrorCode get_ctx(Mat M, PetscInt bs, bmv_ctx **c)
 /* z = A x (+ y if add) */
 static PetscErrorCode bmv_apply(Mat M, Vec x, Vec y, Vec z, int add)
 {
+  PetscContainer     cont;
   bmv_ctx           *c;
   Mat                Ad = M, Ao = NULL;
   const PetscScalar *xa, *ga;
   PetscScalar       *za;
 
   PetscFunctionBegin;
-  PetscCall(get_ctx(M, 1, &c));
+  PetscCall(PetscObjectQuery((PetscObject)M, BMV_KEY, (PetscObject *)&cont));
+  PetscCheck(cont, PETSC_COMM_SELF, PETSC_ERR_PLIB, "blockmv: kernel installed without its plan");
+  PetscCall(PetscContainerGetPointer(cont, (void **)&c));
+  PetscCall(ctx_refresh(M, c));
   PetscCall(PetscLogEventBegin(bmv_event, M, x, z, 0));
   if (add && y != z) PetscCall(VecCopy(y, z));
   if (c->mpi) {
@@ -274,7 +302,7 @@ static PetscErrorCode bmv_apply(Mat M, Vec x, Vec y, Vec z, int add)
     PetscCall(VecRestoreArrayRead(c->lvec, &ga));
   }
   PetscCall(VecRestoreArray(z, &za));
-  PetscCall(PetscLogFlops(2.0 * (double)(c->pd.nnz + (c->mpi ? c->po.nnz : 0))));
+  PetscCall(PetscLogFlops(2.0 * (double)(c->pd.nnz + c->po.nnz)));
   PetscCall(PetscLogEventEnd(bmv_event, M, x, z, 0));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -282,18 +310,22 @@ static PetscErrorCode bmv_apply(Mat M, Vec x, Vec y, Vec z, int add)
 static PetscErrorCode bmv_mult(Mat M, Vec x, Vec y) { return bmv_apply(M, x, NULL, y, 0); }
 static PetscErrorCode bmv_multadd(Mat M, Vec x, Vec y, Vec z) { return bmv_apply(M, x, y, z, 1); }
 
-/* Attach the kernel to M (MATSEQAIJ or MATMPIAIJ; *ok = 0 and M
- * untouched for any other type). Idempotent: a second call only refreshes
- * the plan. Collective on M (the MPI plan builds a scatter). */
+/* Attach the kernel to M (MATSEQAIJ or MATMPIAIJ; *ok = 0 and M keeps
+ * PETSc's kernel for any other type, or if this one fails the check against
+ * it). Idempotent: a second call only refreshes the plan. Collective on M. */
 PetscErrorCode jorek_blockmv_attach(Mat M, int bs, int *ok)
 {
-  PetscBool seq, mpi;
-  bmv_ctx  *c;
+  static int  rejected = 1;
+  PetscBool   seq, mpi;
+  PetscObject rej;
+  bmv_ctx    *c;
+  void (*cur)(void);
 
   PetscFunctionBegin;
   PetscCall(PetscObjectTypeCompare((PetscObject)M, MATSEQAIJ, &seq));
   PetscCall(PetscObjectTypeCompare((PetscObject)M, MATMPIAIJ, &mpi));
-  *ok = (seq || mpi);
+  PetscCall(PetscObjectQuery((PetscObject)M, BMV_REJ, &rej));
+  *ok = (seq || mpi) && !rej;
   if (!*ok) PetscFunctionReturn(PETSC_SUCCESS);
   if (bmv_event < 0) {
     PetscClassId cid;
@@ -301,38 +333,41 @@ PetscErrorCode jorek_blockmv_attach(Mat M, int bs, int *ok)
     PetscCall(PetscLogEventRegister("PC_BlockMV", cid, &bmv_event));
   }
   PetscCall(get_ctx(M, bs, &c));
-  if (c->bs != bs) {
-    c->bs      = bs;
-    c->nzstate = -1;
-    PetscCall(ctx_refresh(M, c));
-  }
-  {
-    void (*cur)(void);
-    PetscCall(MatGetOperation(M, MATOP_MULT, &cur));
-    if (cur != (void (*)(void))bmv_mult) {
-      /* first attach: gate against PETSc's own kernel on a random vector */
-      Vec         x, y0, y1;
-      PetscRandom rnd;
-      PetscReal   e, nr;
-      PetscCall(MatCreateVecs(M, &x, &y0));
-      PetscCall(VecDuplicate(y0, &y1));
-      PetscCall(PetscRandomCreate(PetscObjectComm((PetscObject)M), &rnd));
-      PetscCall(VecSetRandom(x, rnd));
-      PetscCall(PetscRandomDestroy(&rnd));
-      PetscCall(MatMult(M, x, y0));
-      PetscCall(MatSetOperation(M, MATOP_MULT, (void (*)(void))bmv_mult));
-      PetscCall(MatMult(M, x, y1));
-      PetscCall(VecNorm(y0, NORM_2, &nr));
-      PetscCall(VecAXPY(y1, -1.0, y0));
-      PetscCall(VecNorm(y1, NORM_2, &e));
-      PetscCall(VecDestroy(&x));
-      PetscCall(VecDestroy(&y0));
-      PetscCall(VecDestroy(&y1));
-      PetscCheck(e <= 1e-13 * nr, PetscObjectComm((PetscObject)M), PETSC_ERR_PLIB,
-                 "blockmv: kernel disagrees with MatMult, rel. error %g", (double)(nr > 0 ? e / nr : e));
+  PetscCall(MatGetOperation(M, MATOP_MULT, &cur));
+  if (cur != (void (*)(void))bmv_mult) {
+    /* first attach: against the installed kernel on a random vector, to
+       rounding (100 eps sqrt(longest row) |A|_inf |x|_inf, max norm) */
+    MPI_Comm    comm = PetscObjectComm((PetscObject)M);
+    Vec         x, y0, y1;
+    PetscRandom rnd;
+    PetscReal   e, na, nx, tol;
+    PetscInt    lmax = c->pd.lmax + c->po.lmax;
+    PetscCall(MatCreateVecs(M, &x, &y0));
+    PetscCall(VecDuplicate(y0, &y1));
+    PetscCall(PetscRandomCreate(comm, &rnd));
+    PetscCall(VecSetRandom(x, rnd));
+    PetscCall(PetscRandomDestroy(&rnd));
+    PetscCall(MatMult(M, x, y0));
+    PetscCall(MatSetOperation(M, MATOP_MULT, (void (*)(void))bmv_mult));
+    PetscCall(MatMult(M, x, y1));
+    PetscCall(VecAXPY(y1, -1.0, y0));
+    PetscCall(VecNorm(y1, NORM_INFINITY, &e));
+    PetscCall(VecNorm(x, NORM_INFINITY, &nx));
+    PetscCall(MatNorm(M, NORM_INFINITY, &na));
+    PetscCallMPI(MPI_Allreduce(MPI_IN_PLACE, &lmax, 1, MPIU_INT, MPI_MAX, comm));
+    tol = 100 * PETSC_MACHINE_EPSILON * PetscSqrtReal((PetscReal)lmax) * na * nx;
+    PetscCall(VecDestroy(&x));
+    PetscCall(VecDestroy(&y0));
+    PetscCall(VecDestroy(&y1));
+    if (!(e <= tol)) {
+      PetscCall(MatSetOperation(M, MATOP_MULT, cur));
+      PetscCall(PetscObjectCompose((PetscObject)M, BMV_KEY, NULL));
+      PetscCall(PetscObjectContainerCompose((PetscObject)M, BMV_REJ, &rejected, NULL));
+      PetscCall(PetscPrintf(comm, "[Physics PC]   blockmv: kernel differs from MatMult by %g (tolerance %g), MatMult kept\n", (double)e, (double)tol));
+      *ok = 0;
+      PetscFunctionReturn(PETSC_SUCCESS);
     }
   }
-  PetscCall(MatSetOperation(M, MATOP_MULT, (void (*)(void))bmv_mult));
   PetscCall(MatSetOperation(M, MATOP_MULT_ADD, (void (*)(void))bmv_multadd));
   PetscFunctionReturn(PETSC_SUCCESS);
 }

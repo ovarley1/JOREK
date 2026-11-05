@@ -578,9 +578,6 @@ contains
 
     if (my_id == 0) write(*,FMT_TIMING) my_id, '[PETSc] Elapsed time in solve :', t2-t1
 
-    ! Outer iteration count per solve: the primary figure of merit when
-    ! comparing preconditioners over a run. Computed above but previously not
-    ! reported, so a run's cost could only be read off the wall time.
     if (my_id == 0) write(*,'(A,I5,A,I0)') &
       "[PETSc] outer iterations: ", n_iter, "   converged reason: ", reason%v
     if (use_physics_pc) call sf_report(my_id)

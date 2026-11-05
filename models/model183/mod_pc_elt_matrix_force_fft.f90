@@ -30,7 +30,7 @@ pure real*8 function vbr(a, b, chR, chZ, chP, R)
         + (a(1)*b(2) - a(2)*b(1))*chP ) / R
 end function vbr
 
-subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v, gamma_w, vu_full)
+subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v)
 
   use mod_parameters
   use data_structure, only: type_element, type_node
@@ -49,8 +49,6 @@ subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v, gamma_w, vu_full)
   real*8, dimension(DFV, DFV), intent(out) :: ELM
   !> v_par's W terms (model600 only): zero here, for the common interface
   real*8, dimension(DFV, DFV, 3), intent(out), optional :: ELM_v
-  real*8, intent(in), optional :: gamma_w
-  logical, intent(in), optional :: vu_full
 
   !> channels (a, b): phi-derivative order on test, trial
   real*8, allocatable :: ELM_c(:,:,:,:,:)

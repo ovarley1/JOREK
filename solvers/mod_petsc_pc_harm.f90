@@ -1,12 +1,7 @@
-!> The toroidal slots the physics PC's packed operators carry.
-!!
-!! The packed GMG layout keeps a (field, scalar DOF)'s harmonics in pc_ntor
-!! consecutive rows. On the global path these are all n_tor slots of the run;
-!! under physics_pc_sf_mode_split each rank's operators carry one |n| family
-!! only (mod_petsc_pc_sf_fam): the n = 0 slot, or the cos and sin slots of one
-!! n. pc_ntor is then the family's slot count, and pc_mode maps its local
-!! slots back to the global ones, which is all the GMG needs to group slots
-!! by |n| the same way as on the global path.
+!> The toroidal slots the physics PC's packed operators carry: pc_ntor
+!! consecutive rows per (field, scalar DOF), all n_tor slots on the global
+!! layout, one |n| family's under the mode split (mod_petsc_pc_sf_ops), whose
+!! local slots pc_mode maps back to the global ones.
 module mod_petsc_pc_harm
   use mod_parameters, only: n_tor
   implicit none

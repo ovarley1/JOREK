@@ -1,57 +1,15 @@
-!> Distributed exact solve of a GMG axis block over J-sectors (workstream H2).
-!!
-!! THE BLOCK. The axis block of a GMG level (rings 0..K, every J, the slots of
-!! one |n| group or all of them) is what the line smoothers solve exactly
-!! near the axis, where the circle couplings dominate. An element couples
-!! column J only to J +- 1, so the block is a periodic chain of columns plus a
-!! small BORDER: the axis value DOFs force_central_node shares between all J,
-!! which couple to every column. An operator product reaches further (pair_w's
-!! Schur channel -Ltil Dh B_12 couples J +- 2 or 3 in the axis rings): the
-!! chain then has half-width w > 1, measured from the pattern, and every
-!! separator below is w columns wide instead of one.
-!!
-!! WHY. The sparse LU of rds_t solves the whole block on the ranks that own it
-!! (rank 0: the partition is ring by ring). Its size depends on n_tht only, so
-!! under strong scaling it becomes the critical path of every smoothing step.
-!!
-!! THE METHOD: one level of nested dissection in J (the partitioned solvers of
-!! Wang, ACM TOMS 7 (1981), and SPIKE). nsec sector ranks each take a
-!! contiguous range of columns; w columns between neighbouring sectors are a
-!! separator S_s, the border is B. Ordering interiors I_s first,
-!!   A = [ A_II  A_IG ]   (A_II block-diagonal over sectors),
-!!       [ A_GI  A_GG ]   G = S_0 .. S_nsec-1, B,
-!! the reduced system R = A_GG - sum_s A_G,Is A_Is^-1 A_Is,G is again a small
-!! periodic chain (of separators) plus the border. A solve is
-!!   w_s = A_Is^-1 x_Is                        (sector ranks, in parallel)
-!!   g   = x_G - sum_s A_G,Is w_s              (one Allreduce, size |G|)
-!!   y_G = R^-1 g                              (redundant on every sector rank)
-!!   y_Is = A_Is^-1 (x_Is - A_Is,G y_G)        (in parallel)
-!! A sector's interior is a chain of columns, factored as dense blocks
-!! (chain_t, threaded BLAS); R is factored dense up to RDENSE_MAX rows.
-!! Otherwise (couplings beyond the neighbouring column, a larger R, or
-!! -sf_gmg_axis_chain / _axis_dense 0) PETSc's sparse LU, as rds_t. It is
-!! the same elimination as an LU with the separators ordered last, so it is
-!! exact; the first build checks its backward error (axd_gate in
-!! mod_petsc_pc_gmg).
-!!
-!! Its cost per solve on a sector rank is ~ 4 nnz(L_Is) + 2 nnz(L_R): the
-!! interiors shrink like n_tht/nsec while the separator chain grows like nsec,
-!! so the best nsec is ~ sqrt(2 n_tht / 3) (axd_nsec), a gain of about
-!! 3x at n_tht = 64 and 6x at 256 over the sequential LU.
-!!
-!! Communication per solve: one neighbour scatter of the axis rows to the
-!! sector ranks, one Allreduce among them, one scatter back. Ranks outside
-!! the sectors and without axis rows only enter the (empty) scatters.
-!!
-!! Structure (row classes, index sets, scatters, the reduced pattern) once per
-!! run; values and numeric factorisations per rebuild, in two parts: the
-!! collective refill of the sector's couplings (axd_refill) and the
-!! factorisations, local to the sector ranks (axd_factor).
-!!
-!! The sector ranks are roff .. roff + nsec - 1 (mod np). The caller gives the
-!! levels of a hierarchy different offsets and factors them after all refills,
-!! so their factorisations run at the same time on different ranks instead of
-!! one after the other on ranks 0 .. nsec - 1.
+!> Exact solve of a GMG axis block distributed over J-sector ranks
+!! (mod_petsc_pc_gmg). The axis block (rings 0..K, every J and slot) is a
+!! periodic chain of columns J of half-width w <= 3 plus a border, the axis value
+!! DOFs shared by all J. One level of nested dissection in J (partitioned solvers:
+!! Wang, ACM TOMS 7 (1981) 170; SPIKE, Polizzi & Sameh, Parallel Comput. 32
+!! (2006) 177): each of nsec sector ranks factors its interior, a chain of dense
+!! column blocks; the reduced system R of the separators and the border (dense up
+!! to RDENSE_MAX rows, else a sparse LU) is factored redundantly on every sector
+!! rank. A solve is two sweeps over the interiors around one Allreduce of size
+!! |R| among the sector ranks, between a scatter of the axis rows in and out.
+!! Structure once per run (axd_setup); values per rebuild (axd_refill,
+!! collective; axd_factor, sector ranks only).
 module mod_petsc_pc_gmg_axis
 #ifdef USE_PETSC
   use mpi_mod
@@ -60,22 +18,17 @@ module mod_petsc_pc_gmg_axis
   implicit none
   private
 
-  public :: axd_t, axd_nsec, axd_setup, axd_refill, axd_factor, axd_solve
+  public :: axd_t, axd_nsec, axd_setup, axd_refill, axd_factor, axd_solve, axd_destroy
 
-  !> A block-tridiagonal chain of dense blocks (open, no wrap): the rows of a
-  !! matrix grouped into columns c = 1..cm that couple to c +- 1 only. Block
-  !! LU with partial pivoting within the blocks, S_c = D_c - L_c G_c-1,
-  !! G_c = S_c^-1 U_c. A J-sector's interior is such a chain: columns = w
-  !! columns J, each block holding every ring, field, C1 DOF and slot.
-  !! cpos: matrix row -> chain position; cof: column offsets (0-based);
-  !! sof / lof / gof: offsets of S_c (its LU), L_c = A(c, c-1), G_c in
-  !! cs / cl / cg (column-major); cw: solve workspace.
+  !> An open block-tridiagonal chain of dense blocks: matrix rows grouped into
+  !! columns c = 1..cm coupling to c +- 1 only, block LU with partial pivoting
+  !! inside the blocks (S_c = D_c - L_c G_c-1, G_c = S_c^-1 U_c).
   type :: chain_t
     logical :: on = .false.
     integer :: ni = 0, cm = 0
-    integer, allocatable :: cpos(:), cof(:), cpiv(:)
-    integer(8), allocatable :: sof(:), lof(:), gof(:)
-    real*8, allocatable :: cs(:), cl(:), cg(:), cw(:)
+    integer, allocatable :: cpos(:), cof(:), cpiv(:)   !< row -> chain position; column offsets (0-based); pivots
+    integer(8), allocatable :: sof(:), lof(:), gof(:)  !< offsets of S_c (LU), L_c, G_c in cs / cl / cg
+    real*8, allocatable :: cs(:), cl(:), cg(:), cw(:)  !< column-major blocks; cw: solve workspace
   end type chain_t
 
   type :: axd_t
@@ -86,55 +39,48 @@ module mod_petsc_pc_gmg_axis
     integer :: ni = 0, nga = 0, nred = 0, nout = 0
     integer, allocatable :: gpos(:)        !< Gamma_s row k -> reduced row (1-based)
     integer, allocatable :: gcls(:)        !< Gamma_s row k: 1 left separator S_s, 2 right S_s+1, 3 border
-    logical, allocatable :: gown(:)        !< this sector contributes its x and writes its y:
-                                           !< its left separator, and on sector 0 the border
-    ! every sector's Gamma rows as reduced rows (concatenated) and the
-    ! Allgatherv layout of their Schur blocks
-    integer, allocatable :: ng_all(:), goff(:), rpos(:), bcnt(:), bdsp(:)
+    logical, allocatable :: gown(:)        !< Gamma_s row k is written by this sector
+    integer, allocatable :: ng_all(:), goff(:), rpos(:), bcnt(:), bdsp(:)   !< all sectors' Gamma rows, Schur gather layout
     real*8, allocatable  :: cblk(:), call_(:), g(:)
     IS  :: isI, isG, isAll, isOut
     Mat, pointer :: sub(:) => null()       !< A(I,I), A(I,G), A(G,I), A(G,G) of this sector
-    KSP :: kI, kR
+    KSP :: kR
     Mat :: R
     Vec :: xl, yo, wI, tI, yI, rG, yG, gr, yr
     VecScatter :: sin, sout
     logical :: numeric_done = .false.
-    logical :: failed = .false.            !< this rank's last factorisation failed (zero pivot)
-    type(chain_t) :: ch                    !< the interior as a chain (ch%on), else kI
-    logical :: ki_set = .false.            !< kI created
+    logical :: failed = .false.            !< this rank's last factorisation failed
+    type(chain_t) :: ch                    !< the sector's interior
     logical :: rdn = .false.               !< R as a dense LU (rd, rpiv), else kR
+    logical :: kr_set = .false.
     real*8, allocatable :: rd(:)
     integer, allocatable :: rpiv(:)
+    character(len=32) :: pre = ""          !< options prefix of kR
   end type axd_t
 
-  !> reduced systems up to this many rows are factored dense (12000: 1.2 GB)
+  !> reduced systems up to this many rows are factored dense
   integer, parameter :: RDENSE_MAX = 12000
 
 contains
 
-  !> Sector count for a chain of nj columns on np ranks: the cost model's
-  !! optimum sqrt(2 nj / 3), at least 4 columns per sector, at most np.
-  !! Below 2 the sequential LU is used.
+  !> Sector count for a chain of nj columns on np ranks: the optimum of the
+  !! solve cost ~ 4 nnz(interior) + 2 nnz(R), sqrt(2 nj / 3), at least 4
+  !! columns per sector, at most np. Below 2 the caller keeps its LU.
   integer function axd_nsec(nj, np)
     integer, intent(in) :: nj, np
     axd_nsec = min(np, max(1, nint(sqrt(2.d0 * nj / 3.d0))), nj / 4)
   end function axd_nsec
 
-  !--------------------------------------------------------------------
-  !> Structure, first build only (collective on comm). loc = the rank's
-  !! local rows of the block (0-based, ascending), jl = their column J; nj =
-  !! n_tht of the level; nsec from axd_nsec; chain / rdense: interiors as
-  !! dense block chains, R dense (up to RDENSE_MAX rows). Leaves D%on =
-  !! .false. (the same on every rank) if the block is not a chain the method
-  !! applies to.
-  !--------------------------------------------------------------------
-  subroutine axd_setup(D, A, loc, jl, nj, nsec_req, comm, tag, chain, rdense, roff)
+  !> Structure, first build only (collective on comm). loc = the rank's local
+  !! rows of the block (0-based, ascending), jl = their column J; nj = the
+  !! columns of the chain; pre = kR's options prefix; the sector ranks are roff ..
+  !! roff + nsec - 1 (mod np). D%on = .false. (on every rank) if the method does
+  !! not apply.
+  subroutine axd_setup(D, A, loc, jl, nj, nsec_req, comm, tag, pre, roff)
     type(axd_t), intent(inout) :: D
     Mat, intent(in)      :: A
-    integer, intent(in)  :: loc(:), jl(:), nj, nsec_req, comm
-    character(len=*), intent(in) :: tag
-    logical, intent(in)  :: chain, rdense
-    integer, intent(in), optional :: roff   !< first sector rank (default 0)
+    integer, intent(in)  :: loc(:), jl(:), nj, nsec_req, comm, roff
+    character(len=*), intent(in) :: tag, pre
     PetscInt :: rst, ren, ncols, nn
     PetscInt, pointer :: cols(:)
     PetscInt, parameter :: izero = 0, four = 4
@@ -145,6 +91,7 @@ contains
     integer, allocatable :: cls(:), csec(:), rid(:), jsep(:), nnz(:)
     PetscInt, allocatable :: pcol(:)
     integer :: npc, pjl
+    logical :: ok
     PetscInt, allocatable :: li(:), lg(:), lo(:)
     Vec :: tmpl
 
@@ -166,15 +113,12 @@ contains
     allocate(gall(ntot), jall(ntot), ball(ntot), bmine(nl))
     call MPI_Allgatherv(int(rst) + loc, nl, MPI_INTEGER, gall, cnts, dsps(0:np - 1), MPI_INTEGER, comm, mpierr)
     call MPI_Allgatherv(jl, nl, MPI_INTEGER, jall, cnts, dsps(0:np - 1), MPI_INTEGER, comm, mpierr)
-    ! border rows: couple to more than 2 WMAX + 2 distinct columns (a chain
-    ! row of half-width w couples to J-w .. J+w and to the border rows, which
-    ! all report one J; the border couples to every column). On a short
-    ! ring the threshold drops to nj - 1, which keeps the w = 1 classification
+    ! border rows couple to more than 2 WMAX + 2 distinct columns (a chain row
+    ! of half-width w reaches J-w .. J+w and the border, which reports one J);
+    ! on a short ring the threshold drops to nj - 1
     allocate(seen(0:nj - 1))
     seen = -1
     thr = max(4, min(2 * WMAX + 2, nj - 1))
-    ! a node's rows (fields, C1 DOFs, slots) share one column pattern: a row
-    ! with the previous row's pattern and column J has its result (same_row)
     allocate(pcol(0))
     npc = -1; pjl = -1
     do q = 1, nl
@@ -198,9 +142,8 @@ contains
     enddo
     call MPI_Allgatherv(bmine, nl, MPI_INTEGER, ball, cnts, dsps(0:np - 1), MPI_INTEGER, comm, mpierr)
 
-    ! the chain's half-width w: the widest chain-chain coupling, measured on
-    ! the owners. 1 for an element operator; an operator product reaches
-    ! further (pair_w's Schur channel -Ltil Dh B_12 in the axis rings)
+    ! the chain's half-width w: the widest chain-chain coupling (1 for an
+    ! element operator, more for an operator product)
     w = 0
     npc = -1; pjl = -1
     do q = 1, nl
@@ -223,7 +166,7 @@ contains
     call MPI_Allreduce(MPI_IN_PLACE, w, 1, MPI_INTEGER, MPI_MAX, comm, mpierr)
     w = max(w, 1)
     if (w > WMAX) then
-      if (me == 0) write(*,'(A,A,A,I0,A)') "[Physics PC]   GMG ", tag, &
+      if (me == 0) write(*,'(A,A,A,I0,A)') "[Physics PC]   ", tag, &
         ": not a chain of columns (half-width ", w, "), no sector solve"
       return
     endif
@@ -254,6 +197,26 @@ contains
       enddo
     enddo
 
+    ! this rank's sector, and its interior as a chain of w-column blocks
+    vme = modulo(me - roff, np)
+    D%sector = (vme < nsec)
+    D%sec = -1
+    D%ni = 0
+    ok = .true.
+    if (D%sector) then
+      D%sec = vme
+      s = D%sec
+      D%ni = count(cls == 0 .and. csec == s)
+      call chain_setup()
+      ok = D%ch%on
+    endif
+    call MPI_Allreduce(MPI_IN_PLACE, ok, 1, MPI_LOGICAL, MPI_LAND, comm, mpierr)
+    if (.not. ok) then
+      call chain_free(D%ch)
+      if (me == 0) write(*,'(A,A,A)') "[Physics PC]   ", tag, ": a sector interior is not a chain, no sector solve"
+      return
+    endif
+
     ! the reduced system: S_0 .. S_nsec-1, then B, each ascending
     allocate(rid(ntot))
     rid = 0
@@ -283,21 +246,15 @@ contains
       call add_rows(1, s); call add_rows(1, mod(s + 1, nsec)); call add_rows(2, -1)
     enddo
 
-    ! this rank's sector
     D%nsec = nsec
-    vme = me
-    if (present(roff)) vme = modulo(me - roff, np)
-    D%sector = (vme < nsec)
-    D%sec = -1
-    if (D%sector) D%sec = vme
+    D%pre = pre
     color = MPI_UNDEFINED
     if (D%sector) color = 1
     ! keyed by the sector: the Allgatherv of the Schur blocks is in sector order
     call MPI_Comm_split(comm, color, vme, D%comm, mpierr)
-    D%ni = 0; D%nga = 0; D%nout = 0
+    D%nga = 0; D%nout = 0
     if (D%sector) then
       s = D%sec
-      D%ni = count(cls == 0 .and. csec == s)
       D%nga = D%ng_all(s)
       allocate(li(D%ni), lg(D%nga), D%gpos(D%nga), D%gcls(D%nga), D%gown(D%nga))
       q = 0
@@ -310,12 +267,12 @@ contains
       call gamma_rows(1, s, 1)
       call gamma_rows(1, mod(s + 1, nsec), 2)
       call gamma_rows(2, -1, 3)
+      ! a sector writes its left separator, and sector 0 the border
       D%gown = (D%gcls == 1 .or. (D%gcls == 3 .and. s == 0))
       D%nout = D%ni + count(D%gown)
       allocate(lo(D%nout))
       lo(1:D%ni) = li
       lo(D%ni + 1:) = pack(lg, D%gown)
-      if (chain) call chain_setup()
     else
       allocate(li(0), lg(0), lo(0), D%gpos(0), D%gcls(0), D%gown(0))
     endif
@@ -343,7 +300,7 @@ contains
       do s = 1, nsec - 1
         D%bdsp(s) = D%bdsp(s - 1) + D%bcnt(s - 1)
       enddo
-      D%rdn = rdense .and. D%nred <= RDENSE_MAX
+      D%rdn = D%nred <= RDENSE_MAX
       if (D%rdn) then
         allocate(D%rd(int(D%nred, 8) * D%nred), D%rpiv(D%nred))
       else
@@ -364,19 +321,18 @@ contains
         call MatSetOption(D%R, MAT_ROW_ORIENTED, PETSC_FALSE, ierr)
       endif
     endif
-    ! the four couplings of this sector (non-sector ranks take part with
-    ! empty index sets: the call is collective)
+    ! the four couplings of this sector (collective: the other ranks pass empty sets)
     call MatCreateSubMatrices(A, four, [D%isI, D%isI, D%isG, D%isG], &
                               [D%isI, D%isG, D%isI, D%isG], MAT_INITIAL_MATRIX, D%sub, ierr)
     D%on = .true.
-    if (me == 0) write(*,'(A,A,A,I0,A,I0,A,I0,A,I0,A,I0,A)') "[Physics PC]   GMG ", tag, ": ", nsec, &
+    if (me == 0) write(*,'(A,A,A,I0,A,I0,A,I0,A,I0,A,I0,A)') "[Physics PC]   ", tag, ": ", nsec, &
       " J-sectors (", ntot, " rows, reduced system ", D%nred, ", ", count(cls == 2), &
       " shared rows, separators ", w, " column(s))"
 
   contains
 
     !> Row q has the pattern cols(1:ncols) and the column J of the last row
-    !! looked at; otherwise q becomes that row.
+    !! looked at (a node's rows share one pattern); otherwise q becomes that row.
     logical function same_row(q_)
       integer, intent(in) :: q_
       same_row = .false.
@@ -393,7 +349,7 @@ contains
     end function same_row
 
     !> The interior's chain layout (D%ch): every interior row's chain column,
-    !! w consecutive J per column.
+    !! w consecutive J per column; D%ch%on = .false. if it is empty or has a gap.
     subroutine chain_setup()
       integer :: kk, qq, nint_
       integer, allocatable :: ccol(:)
@@ -429,9 +385,8 @@ contains
       enddo
     end subroutine gamma_rows
 
-    !> position of x in the ascending list l, or 0. hint: the previous
-    !! column's position; a row's columns come in runs of consecutive indices
-    !! (the slots and C1 DOFs of a node), so the next one is tried first
+    !> position of x in the ascending list l, or 0; the position after hint
+    !! is tried first (a row's columns come in runs of consecutive indices)
     integer function find(l, x, hint)
       integer, intent(in) :: l(:), x, hint
       integer :: lo_, hi, mid
@@ -457,9 +412,8 @@ contains
     end function find
   end subroutine axd_setup
 
-  !> Numeric part, every rebuild, collective on A's communicator: the
-  !! sector's couplings refilled from A (nothing on the first build,
-  !! axd_setup extracted them). axd_factor follows.
+  !> Numeric part, every rebuild after the first, collective on A's
+  !! communicator: the sector's couplings refilled from A. axd_factor follows.
   subroutine axd_refill(D, A)
     type(axd_t), intent(inout) :: D
     Mat, intent(in) :: A
@@ -469,17 +423,16 @@ contains
     if (.not. D%numeric_done) return
     call MatCreateSubMatrices(A, four, [D%isI, D%isI, D%isG, D%isG], [D%isI, D%isG, D%isI, D%isG], &
                               MAT_REUSE_MATRIX, D%sub, ierr)
-    ! MAT_REUSE_MATRIX does not advance the submatrices' state: without the
-    ! assembly the LU would not be refactored (the rds_t trap)
+    ! MAT_REUSE_MATRIX does not advance the submatrices' state: assemble
     do k = 1, 4
       call MatAssemblyBegin(D%sub(k), MAT_FINAL_ASSEMBLY, ierr)
       call MatAssemblyEnd(D%sub(k), MAT_FINAL_ASSEMBLY, ierr)
     enddo
   end subroutine axd_refill
 
-  !> Sector-rank part of the numeric phase (others return): factor A_Is, form the
-  !! Schur block, gather all blocks among the sector ranks, assemble and
-  !! factor R.
+  !> Sector ranks (others return): factor the interior, form the Schur block,
+  !! gather all blocks among the sector ranks, factor R. A failed factorisation
+  !! sets D%failed and skips the local work but not the gather.
   subroutine axd_factor(D)
     type(axd_t), intent(inout) :: D
     PetscErrorCode :: ierr
@@ -498,60 +451,44 @@ contains
     D%failed = .false.
     if (.not. D%sector) return
 
-    ! the interior LU; a coupling beyond the neighbouring chain column
-    ! clears ch%on and falls back to PETSc's LU
-    if (D%ch%on) then
-      call chain_factor(D%ch, D%sub(1), D%failed)
-      if (.not. D%ch%on) call chain_free(D%ch)
-    endif
-    if (.not. D%ch%on) then
-      if (.not. D%ki_set) then
-        call make_lu(D%kI, D%sub(1), "gmg_axsec_", MATORDERINGQMD)
-        D%ki_set = .true.
-      else
-        call KSPSetOperators(D%kI, D%sub(1), D%sub(1), ierr)
-      endif
-      call KSPSetUp(D%kI, ierr)
-      call check_failed(D%kI)
-    endif
+    call chain_factor(D%ch, D%sub(1), D%failed)
 
     ! this sector's Schur block C = A_GG(owned part) - A_GI A_II^-1 A_IG
-    call MatConvert(D%sub(2), MATSEQDENSE, MAT_INITIAL_MATRIX, Bd, ierr)
-    call MatDuplicate(Bd, MAT_DO_NOT_COPY_VALUES, Zd, ierr)
-    if (D%ch%on) then
+    D%cblk = 0.d0
+    if (.not. D%failed) then
+      call MatConvert(D%sub(2), MATSEQDENSE, MAT_INITIAL_MATRIX, Bd, ierr)
+      call MatDuplicate(Bd, MAT_DO_NOT_COPY_VALUES, Zd, ierr)
       call MatDenseGetArrayRead(Bd, a2, ierr)
       call MatDenseGetArray(Zd, z2, ierr)
       call chain_solve(D%ch, a2, z2, D%nga)
       call MatDenseRestoreArray(Zd, z2, ierr)
       call MatDenseRestoreArrayRead(Bd, a2, ierr)
       deallocate(D%ch%cw)                        ! sized for nga columns, the solves need one
-    else
-      call KSPMatSolve(D%kI, Bd, Zd, ierr)
-    endif
-    call MatMatMult(D%sub(3), Zd, MAT_INITIAL_MATRIX, PETSC_DEFAULT_REAL, Cd, ierr)
-    call MatDenseGetArrayRead(Cd, a2, ierr)
-    do c = 1, D%nga
+      call MatMatMult(D%sub(3), Zd, MAT_INITIAL_MATRIX, PETSC_DETERMINE_REAL, Cd, ierr)
+      call MatDenseGetArrayRead(Cd, a2, ierr)
+      do c = 1, D%nga
+        do k = 1, D%nga
+          D%cblk((c - 1) * D%nga + k) = -a2(k, c)
+        enddo
+      enddo
+      call MatDenseRestoreArrayRead(Cd, a2, ierr)
+      call MatDestroy(Bd, ierr); call MatDestroy(Zd, ierr); call MatDestroy(Cd, ierr)
+      ! A_GG: each entry exactly once over the sectors (take)
+      call MatGetSize(D%sub(4), nr, nc, ierr)
       do k = 1, D%nga
-        D%cblk((c - 1) * D%nga + k) = -a2(k, c)
+        call MatGetRow(D%sub(4), int(k - 1, kind(nr)), k2, cols, vals, ierr)
+        do c = 1, int(k2)
+          cr = k; cc = int(cols(c)) + 1
+          if (take(cr, cc)) D%cblk((cc - 1) * D%nga + cr) = D%cblk((cc - 1) * D%nga + cr) + vals(c)
+        enddo
+        call MatRestoreRow(D%sub(4), int(k - 1, kind(nr)), k2, cols, vals, ierr)
       enddo
-    enddo
-    call MatDenseRestoreArrayRead(Cd, a2, ierr)
-    call MatDestroy(Bd, ierr); call MatDestroy(Zd, ierr); call MatDestroy(Cd, ierr)
-    ! A_GG: rows of the left separator, the border's columns of it, and on
-    ! sector 0 the border's own block -- each entry exactly once
-    call MatGetSize(D%sub(4), nr, nc, ierr)
-    do k = 1, D%nga
-      call MatGetRow(D%sub(4), int(k - 1, kind(nr)), k2, cols, vals, ierr)
-      do c = 1, int(k2)
-        cr = k; cc = int(cols(c)) + 1
-        if (take(cr, cc)) D%cblk((cc - 1) * D%nga + cr) = D%cblk((cc - 1) * D%nga + cr) + vals(c)
-      enddo
-      call MatRestoreRow(D%sub(4), int(k - 1, kind(nr)), k2, cols, vals, ierr)
-    enddo
+    endif
 
     ! every sector's block to every sector rank, then R
     call MPI_Allgatherv(D%cblk, D%nga * D%nga, MPI_DOUBLE_PRECISION, D%call_, D%bcnt, D%bdsp, &
                         MPI_DOUBLE_PRECISION, D%comm, mpierr)
+    if (D%failed) return
     if (D%rdn) then
       ! R dense, column-major (the blocks are, too), LU with partial pivoting
       D%rd = 0.d0
@@ -579,55 +516,39 @@ contains
     enddo
     call MatAssemblyBegin(D%R, MAT_FINAL_ASSEMBLY, ierr)
     call MatAssemblyEnd(D%R, MAT_FINAL_ASSEMBLY, ierr)
-    if (fresh) then
+    if (.not. D%kr_set) then
       call MatSetOption(D%R, MAT_NEW_NONZERO_LOCATION_ERR, PETSC_TRUE, ierr)
-      call make_lu(D%kR, D%R, "gmg_axred_", MATORDERINGND)
+      call KSPCreate(PETSC_COMM_SELF, D%kR, ierr)
+      call KSPSetOperators(D%kR, D%R, D%R, ierr)
+      call KSPSetType(D%kR, KSPPREONLY, ierr)
+      call KSPGetPC(D%kR, pc, ierr)
+      call PCSetType(pc, PCLU, ierr)
+      call PCFactorSetMatSolverType(pc, MATSOLVERPETSC, ierr)
+      call PCFactorSetMatOrderingType(pc, MATORDERINGND, ierr)
+      call KSPSetOptionsPrefix(D%kR, trim(D%pre), ierr)
+      call KSPSetFromOptions(D%kR, ierr)
+      D%kr_set = .true.
     else
       call KSPSetOperators(D%kR, D%R, D%R, ierr)
     endif
     call KSPSetUp(D%kR, ierr)
-    call check_failed(D%kR)
+    block
+      PCFailedReason :: why
+      call KSPGetPC(D%kR, pc, ierr)
+      call PCGetFailedReason(pc, why, ierr)
+      if (why /= PC_NOERROR) D%failed = .true.   ! PETSc's LU does not pivot
+    end block
 
   contains
 
-    !> PETSc's LU does not pivot: a zero pivot leaves a failed factor, which the
-    !! caller must replace (axd_factor_pending falls back to the block's LU).
-    !! The rest of the factorisation still runs, keeping the sector collectives
-    !! matched.
-    subroutine check_failed(ksp)
-      KSP :: ksp
-      PCFailedReason :: why
-      call KSPGetPC(ksp, pc, ierr)
-      call PCGetFailedReason(pc, why, ierr)
-      if (why /= PC_NOERROR) D%failed = .true.
-    end subroutine check_failed
-
     !> entry (row k, column c) of A_GG belongs to this sector's block: the
     !! rows of its left separator, the border's couplings to that separator,
-    !! and on sector 0 the border's own block -- so each entry is added once
+    !! and on sector 0 the border's own block
     logical function take(k_, c_)
       integer, intent(in) :: k_, c_
       take = D%gcls(k_) == 1 .or. (D%gcls(k_) == 3 .and. D%gcls(c_) == 1) &
              .or. (D%gcls(k_) == 3 .and. D%gcls(c_) == 3 .and. D%sec == 0)
     end function take
-
-    !> ord: quotient minimum degree for the interiors (less fill than nested
-    !! dissection on the mixed pair_w block: factorisation, Schur block and
-    !! triangular solves all cheaper), nested dissection for R
-    subroutine make_lu(ksp, M, pre, ord)
-      KSP :: ksp
-      Mat :: M
-      character(len=*), intent(in) :: pre, ord
-      call KSPCreate(PETSC_COMM_SELF, ksp, ierr)
-      call KSPSetOperators(ksp, M, M, ierr)
-      call KSPSetType(ksp, KSPPREONLY, ierr)
-      call KSPGetPC(ksp, pc, ierr)
-      call PCSetType(pc, PCLU, ierr)
-      call PCFactorSetMatSolverType(pc, MATSOLVERPETSC, ierr)
-      call PCFactorSetMatOrderingType(pc, ord, ierr)
-      call KSPSetOptionsPrefix(ksp, pre, ierr)
-      call KSPSetFromOptions(ksp, ierr)
-    end subroutine make_lu
   end subroutine axd_factor
 
   !> yy(axis rows) = A_ax^-1 xx(axis rows). Collective on the vectors'
@@ -705,10 +626,6 @@ contains
     subroutine interior_solve(u, v)
       Vec :: u, v
       PetscScalar, pointer :: up(:), vp(:)
-      if (.not. D%ch%on) then
-        call KSPSolve(D%kI, u, v, ierr)
-        return
-      endif
       call VecGetArrayRead(u, up, ierr)
       call VecGetArray(v, vp, ierr)
       call chain_solve(D%ch, up, vp, 1)
@@ -716,6 +633,39 @@ contains
       call VecRestoreArrayRead(u, up, ierr)
     end subroutine interior_solve
   end subroutine axd_solve
+
+  !> Free D's objects and its communicator. Collective on the communicator D
+  !! was set up on; returns at once where D is not in use (D%on, the same on
+  !! every rank).
+  subroutine axd_destroy(D)
+    type(axd_t), intent(inout) :: D
+    PetscInt, parameter :: four = 4
+    PetscErrorCode :: ierr
+    integer :: mpierr
+    if (.not. D%on) return
+    call MatDestroySubMatrices(four, D%sub, ierr)
+    call VecScatterDestroy(D%sin, ierr); call VecScatterDestroy(D%sout, ierr)
+    call VecDestroy(D%xl, ierr); call VecDestroy(D%yo, ierr)
+    call ISDestroy(D%isI, ierr); call ISDestroy(D%isG, ierr)
+    call ISDestroy(D%isAll, ierr); call ISDestroy(D%isOut, ierr)
+    if (D%sector) then
+      call VecDestroy(D%wI, ierr); call VecDestroy(D%tI, ierr); call VecDestroy(D%yI, ierr)
+      call VecDestroy(D%rG, ierr); call VecDestroy(D%yG, ierr)
+      if (D%rdn) then
+        deallocate(D%rd, D%rpiv)
+      else
+        if (D%kr_set) call KSPDestroy(D%kR, ierr)
+        call MatDestroy(D%R, ierr)
+        call VecDestroy(D%gr, ierr); call VecDestroy(D%yr, ierr)
+      endif
+      call MPI_Comm_free(D%comm, mpierr)
+      deallocate(D%g, D%cblk, D%call_, D%bcnt, D%bdsp)
+    endif
+    deallocate(D%gpos, D%gcls, D%gown, D%ng_all, D%goff, D%rpos)
+    call chain_free(D%ch)
+    if (allocated(D%ch%cpos)) deallocate(D%ch%cpos, D%ch%cof)
+    D%on = .false.; D%sector = .false.; D%kr_set = .false.; D%numeric_done = .false.
+  end subroutine axd_destroy
 
   !> ch's layout from the column (1..cm) of every matrix row; ch%on = .false.
   !! if a column is empty.
@@ -753,8 +703,8 @@ contains
 
   !> The block LU of amat (sequential AIJ, rows and columns in the order
   !! chain_layout was given): its blocks, then S_c = D_c - L_c G_c-1, getrf,
-  !! G_c = S_c^-1 U_c. A coupling beyond the neighbouring column clears ch%on
-  !! (the caller falls back); a zero pivot sets failed.
+  !! G_c = S_c^-1 U_c. A coupling beyond the neighbouring column or a zero
+  !! pivot sets failed; the factors are then incomplete and must not be used.
   subroutine chain_factor(ch, amat, failed)
     type(chain_t), intent(inout) :: ch
     Mat, intent(in) :: amat
@@ -765,10 +715,10 @@ contains
     PetscErrorCode :: ierr
     integer :: c, q, p, pc, cr, cc, info, m
     integer(8) :: ts, tl, tg
-    integer, allocatable :: colof(:)
-    integer :: n(0:ch%cm + 1)
+    integer, allocatable :: colof(:), n(:)
 
     m = ch%cm
+    allocate(n(0:m + 1))
     n = 0
     do c = 1, m
       n(c) = ch%cof(c + 1) - ch%cof(c)
@@ -800,11 +750,11 @@ contains
         else if (cc == cr + 1) then
           ch%cg(ch%gof(cr) + int(pc - ch%cof(cc) - 1, 8) * n(cr) + p - ch%cof(cr)) = vals(c)
         else
-          ch%on = .false.
+          failed = .true.
         endif
       enddo
       call MatRestoreRow(amat, int(q - 1, kind(k2)), k2, cols, vals, ierr)
-      if (.not. ch%on) return
+      if (failed) return
     enddo
     do c = 1, m
       if (c > 1) call dgemm('N', 'N', n(c), n(c), n(c - 1), -1.d0, ch%cl(ch%lof(c) + 1), n(c), &

@@ -1,22 +1,8 @@
-!> Toroidal FFT scatter helpers shared by the preconditioner element matrices.
-!!
-!! JOREK assembles the poloidal element matrix on `n_plane` toroidal planes and
-!! then transforms to the Fourier representation. Four channels are needed,
-!! depending on where covariant toroidal derivatives act:
-!!
-!!   ELM_p   : no d/dphi                       -> scatter_fft_to_elm
-!!   ELM_n   : d/dphi on the trial  (column)   -> scatter_fft_to_elm_n
-!!   ELM_k   : d/dphi on the test   (row)      -> scatter_fft_to_elm_k
-!!   ELM_kn  : d/dphi on both                  -> scatter_fft_to_elm_kn
-!!
-!! Each routine scatters the transform of one (row, col) basis-function pair into
-!! the real cos/sin-packed element matrix. On Fourier modes d/dphi -> i*n, which
-!! is why the `_n` / `_k` variants carry a single factor `mode(...)` and swap
-!! real/imag parts, and the `_kn` variant carries two factors and an extra sign
-!! from i^2 = -1.
-!!
-!! These bodies were previously duplicated inside mod_elt_matrix_elliptic and
-!! models/model199/mod_elt_matrix_fft; this module is the single source.
+!> Toroidal FFT scatter of the preconditioner element matrices: the transform
+!! of one (row, column) basis pair, assembled on n_plane toroidal planes, into
+!! the cos/sin-packed element matrix. The channel says where d/dphi acts:
+!! nowhere (scatter_fft_to_elm), on the trial function (_n), on the test
+!! function (_k) or on both (_kn); on a Fourier mode d/dphi = i n.
 module mod_pc_fft_scatter
 
   implicit none

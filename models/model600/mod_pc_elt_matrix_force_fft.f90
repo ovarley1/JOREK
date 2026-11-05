@@ -12,10 +12,7 @@
 !!   W_vu(v,u) = - 2 c gamma p0 (D_B v) dZ u                    (-B_7p M^-1 B_pu)
 !!   W_uv(v,V) = + 2 c dZ v (V P_B + gamma p0 D_B V)            (-B_up M^-1 B_p7)
 !! W_vu drops the R[p0,u] half of dp_u, which for an axisymmetric p0(psi0)
-!! cancels against the psi channel -B_71 M_psi^-1 B_12 u; vu_full keeps it,
-!!   W_vu(v,u) = - c (D_B v) (R [p0,u] + 2 gamma p0 dZ u),
-!! for a sweep that puts psi_w into v_par's row. gamma_w replaces GAMMA in
-!! these three terms only.
+!! cancels against the psi channel -B_71 M_psi^-1 B_12 u.
 module mod_pc_elt_matrix_force_fft
 
   use mod_pc_fft_scatter, only: scatter_fft_to_elm, scatter_fft_to_elm_n, &
@@ -28,7 +25,7 @@ module mod_pc_elt_matrix_force_fft
 
 contains
 
-subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v, gamma_w, vu_full)
+subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v)
 
   use mod_parameters
   use data_structure, only: type_element, type_node
@@ -47,13 +44,11 @@ subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v, gamma_w, vu_full)
   real*8, dimension(DFV, DFV), intent(out) :: ELM
   !> v_par's W terms, assembled when present: 1 = W_vv, 2 = W_vu, 3 = W_uv
   real*8, dimension(DFV, DFV, 3), intent(out), optional :: ELM_v
-  real*8, intent(in), optional :: gamma_w    !< their adiabatic index (default GAMMA)
-  logical, intent(in), optional :: vu_full   !< W_vu with the R [p0,u] half
 
   real*8, dimension(n_plane, NFV, NFV) :: ELM_p
   !> v_par's blocks per toroidal channel: p, d_phi on trial (n), test (k), both (kn)
   real*8, allocatable, dimension(:,:,:,:) :: EV_p, EV_n, EV_k, EV_kn
-  logical :: do_v, vfull
+  logical :: do_v
 
   real*8, dimension(n_gauss, n_gauss) :: x_g, x_s, x_t, y_s, y_t
   !> psi0 (1), rho0 (2), T0 (3) and their s, t derivatives; d_phi of rho0, T0
@@ -67,7 +62,7 @@ subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v, gamma_w, vu_full)
   real*8  :: wst, xjac, BigR, theta, zeta_t, pref, GAMMA_l, sz, f_s, f_t
   real*8  :: ps0_x, ps0_y, r0, r0_x, r0_y, T0, T0_x, T0_y, p0, p0_x, p0_y
   real*8  :: v, v_y, u, u_x, u_y, a_curv, a_uu
-  real*8  :: g_v, p0_p, P_B, cv, b_tst, b_tri, qv, qv_n, qu
+  real*8  :: p0_p, P_B, cv, b_tst, b_tri, qv, qv_n, qu
   real*8     :: in_fft(1:n_plane)
   complex*16 :: out_fft(1:n_plane)
 
@@ -82,10 +77,6 @@ subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v, gamma_w, vu_full)
   endif
 
   GAMMA_l = gamma
-  g_v     = gamma
-  if (present(gamma_w)) g_v = gamma_w
-  vfull   = .false.
-  if (present(vu_full)) vfull = vu_full
 
   theta  = time_evol_theta
   zeta_t = time_evol_zeta * 2.0d0 * tstep / (tstep + tstep_prev)
@@ -174,14 +165,13 @@ subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v, gamma_w, vu_full)
           if (.not. do_v) cycle
           ! D_B v = (F0/R) v_p + b_tst; the trial u is V in W_vv / W_uv
           b_tri = u_x*ps0_y - u_y*ps0_x
-          qv   = u * P_B + g_v * p0 * b_tri               ! V P_B + g p0 [V, psi0]
-          qv_n = g_v * p0 * F0 / BigR * u                 ! g p0 (F0/R) d_phi V
+          qv   = u * P_B + GAMMA_l * p0 * b_tri           ! V P_B + gamma p0 [V, psi0]
+          qv_n = GAMMA_l * p0 * F0 / BigR * u             ! gamma p0 (F0/R) d_phi V
           EV_p (mp,index_ij,index_kl,1) = EV_p (mp,index_ij,index_kl,1) + wst * cv * b_tst * qv / BigR
           EV_n (mp,index_ij,index_kl,1) = EV_n (mp,index_ij,index_kl,1) + wst * cv * b_tst * qv_n / BigR
           EV_k (mp,index_ij,index_kl,1) = EV_k (mp,index_ij,index_kl,1) + wst * cv * F0 / BigR**2 * v * qv
           EV_kn(mp,index_ij,index_kl,1) = EV_kn(mp,index_ij,index_kl,1) + wst * cv * F0 / BigR**2 * v * qv_n
-          qu = 2.d0 * g_v * p0 * u_y
-          if (vfull) qu = qu + BigR * ( p0_x*u_y - p0_y*u_x )
+          qu = 2.d0 * GAMMA_l * p0 * u_y
           EV_p (mp,index_ij,index_kl,2) = EV_p (mp,index_ij,index_kl,2) - wst * cv * b_tst * qu
           EV_k (mp,index_ij,index_kl,2) = EV_k (mp,index_ij,index_kl,2) - wst * cv * F0 / BigR * v * qu
           EV_p (mp,index_ij,index_kl,3) = EV_p (mp,index_ij,index_kl,3) + wst * cv * 2.d0 * v_y * qv

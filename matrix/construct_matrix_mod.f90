@@ -572,15 +572,9 @@ subroutine add_to_a_mat(element, node_out, a_mat, rhs_local, my_ind_min, my_ind_
 
   logical :: i_bnd
   integer :: i_bnd_type
-  !> PER-VARIABLE representative diagonal for eliminate_boundary_dofs BC rows.
-  !! Was a single scalar averaged over ALL variables and then floored at 1.0.
-  !! n_var variables share this element matrix and their diagonals differ by ~8
-  !! decades (psi/j ~1e-4 against u ~1e3-1e4 on the 51x16 case), so one scalar --
-  !! measured 3.3004e3 -- landed psi's and j's boundary rows about seven decades
-  !! above their own bulk, and the floor would have kept them four decades high
-  !! even per-variable. Those rows then carried essentially the whole diagonal
-  !! spread of the physics PC's packed pairs (1.78e10 measured, against ~1e4 for
-  !! the bulk alone). See docs/physics_pc/workstream_B_smoother_design.md 10.4.
+  !> Per-variable diagonal of the eliminate_boundary_dofs boundary rows: the
+  !! variables' diagonals differ by orders of magnitude, and one shared value
+  !! would put some fields' boundary rows far off their bulk scale.
   real*8 :: elm_diagonal_average(n_var)
   integer :: nnz_counter(n_var)
   integer :: jvar

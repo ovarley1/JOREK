@@ -1,58 +1,17 @@
 ! =====================================================================
-!  cbm18_circ_pcbench
-!  Peeling-ballooning benchmark case for the physics PC (docs/physics_pc).
+!  cbm18_circ_pcbench (model199)
+!  The circular-limiter CBM18 case (namelist/model302/cbm18_in) at
+!  tstep 3 with parallel diffusion (D_par 1, ZK_par 10): a ballooning-
+!  unstable pedestal at n = 6, as a test case of the split-field
+!  preconditioner. The mesh is small; cbm18's own is n_radial 81,
+!  n_pol 128, n_flux 51, n_tht 128.
 !
-!  Second physics case for Stage 4.2b.  Everything measured so far comes
-!  from `intear_pcbench_gradients`: a 2/1 tearing mode, weak flow, n = 1,
-!  very large aspect ratio, low beta.  This case is the opposite corner:
-!  a high-beta ballooning-unstable pedestal at n = 6 and tstep = 3, which
-!  sits inside the measured M1a / M2e crossover window.
-!
-!  Derived from `namelist/model302/cbm18_in` (the CBM18 case of the JOREK
-!  "running JOREK for the first time" howto), which is ALREADY the
-!  circular-limiter geometry: `n_boundary = 0` makes its 513-point
-!  R_boundary/Z_boundary table inert, and ellip=1, tria=quad=0, amin=2,
-!  R_geo=3 is a circular cross-section at inverse aspect ratio 2/3.
-!
-!  Changes relative to cbm18_in:
-!    - tstep 2 -> 3            (the regime under study)
-!    - ZK_par  0 -> 10.        \  otherwise L_T_psi ~ (ZK_par-ZK_perp) grad T0
-!    - D_par   0 -> 1.         /  and L_rho_psi are structurally ZERO and the
-!                                 rho/T-channel question cannot be asked at all.
-!                                 ZK_par = 10 is taken from model303/inxflow.
-!    - D_perp, ZK_perp 1e-7 -> 1e-6   (matches the tearing benchmark scaling)
-!    - mesh: diagnostic resolution, see below
-!    - the physics-PC / solver tail copied from intear_pcbench_gradients
-!
-!  NOT taken from inxflow: its X-point geometry.  A diverted mesh changes
-!  the boundary treatment, and `eliminate_boundary_dofs` -- which every
-!  measurement in this study depends on -- is untested on open field lines.
-!
-!  --- Compile-time settings -------------------------------------------
-!  n_tor / n_period / n_plane are in models/mod_settings.f90, NOT here.
-!  Two separate builds are needed (util/config.sh):
-!    axisymmetric cold start :  ./util/config.sh model=199 n_tor=1 n_plane=1
-!    ballooning run          :  ./util/config.sh model=199 n_tor=3 n_period=6 n_plane=4
-!  With n_tor=3, n_period=6, det_modes.f90 gives harmonics n = 0 and n = 6.
-!
-!  --- Workflow ---------------------------------------------------------
-!  1. n_tor=1 build, restart=.f., use_physics_pc=.f.: relax the projected
-!     Grad-Shafranov equilibrium until E_kin(n=0) reaches a plateau.  This
-!     step is REQUIRED here: the Stage 4.2 equilibrium measurement assumes
-!     u0 ~ 0 (that is what makes dpsi_vs_mass and dpsi_vs_B11 coincide and
-!     is how the ADV1 block is isolated), and CBM18's steep pedestal leaves
-!     much larger startup transients than the mild `intear` profiles.
-!  2. n_tor=3/n_period=6 build, restart=.t.: JOREK seeds the new harmonics
-!     at 1e-10 * the axisymmetric rho and T (mod_import_restart.f90).
-!  3. Diagnostics: restart=.t., nstep=1, use_physics_pc=.t.
-!
-!  Mesh: the values below are the small DIAGNOSTIC resolution of the
-!  original Schur-probing study.  Ladder used for the h-study: 13x24, 17x28, 21x32.
-!  For the physics check (growth rate of n=6) use cbm18's own resolution:
-!    n_radial=81  n_pol=128  n_flux=51  n_tht=128
-!
-!  The physics PC (use_physics_pc) runs on any number of MPI ranks; its
-!  mode split needs at least (n_tor+1)/2.
+!  Builds (models/mod_settings.f90): n_tor 1, n_plane 1 for stage 1;
+!  n_tor 3, n_period 6, n_plane 4 (n = 0, 6) for stages 2 and 3.
+!    1. restart .f., use_physics_pc .f.: relax the equilibrium until
+!       E_kin(n=0) levels off
+!    2. restart .t.: the n = 6 harmonics start from a 1e-10 seed
+!    3. restart .t., nstep 1, use_physics_pc .t.
 ! =====================================================================
 
 &in1
@@ -110,8 +69,7 @@
  eta_num   = 1.d-10
  visco_num = 1.d-10
 
-! D_par / ZK_par raised from cbm18's 0: they are the ONLY thing that makes
-! L_rho_psi and the parallel part of L_T_psi nonzero.
+! raised from cbm18's 0: the psi couplings of the rho and T equations
  D_par     = 1.d0
  D_perp    = 1.d-6
 
@@ -129,14 +87,10 @@
  FF_coef(7)  =  0.5974d0
  FF_coef(8)  =  0.0424d0
 
-! Held in reserve: if the pedestal washes out during the relaxation phase
-! before the n=6 mode grows, turn these on (values from model303/inxflow)
-! rather than re-tuning the equilibrium.
  heatsource     = 0.d0
  particlesource = 0.d0
 
-! T_coef(1:3) = cubic in psi_n, (4) = barrier width, (5) = barrier position
-! (models/temperature.f90:47-53).  This is the ballooning drive.
+! T_coef(1:3) cubic in psi_n, (4) barrier width, (5) barrier position
  T_0 = 0.038727
  T_1 = 0.
  T_coef(1) = -0.2191
@@ -160,19 +114,14 @@
  gmres_tol      = 1.d-8
 
 ! --- physics PC -------------------------------------------------------
-! Eliminate the Dirichlet DOFs (row+column zeroed, representative diagonal)
-! instead of the 1e12 ZBIG penalty.  Required for this study: the penalty
-! rows otherwise dominate every operator norm.
+! eliminated Dirichlet DOFs instead of the 1e12 penalty, in the system
+! matrix too: keep it the same in runs that are compared
  eliminate_boundary_dofs      = .t.
 
-! use_physics_pc = .t.: the split-field (SF) preconditioner in its production
-! configuration (the physics_pc_sf_* defaults, models/phys_module.f90): all
-! toroidal harmonics coupled. physics_pc_sf_harm_couple = .f. gives the
-! |n|-diagonal blocks on one rank group per |n| family (mode split, needs
-! >= (n_tor+1)/2 MPI ranks; for fewer also set physics_pc_sf_mode_split = .f.)
+! the split-field preconditioner, configured by the physics_pc_sf_* entries
  use_physics_pc               = .t.
 
-! this build has no MUMPS/STRUMPACK bindings; MUMPS is reached via PETSc
+! linear solves through PETSc
  use_strumpack     = .f.
  use_strumpack_eq  = .f.
  use_strumpack_prj = .f.

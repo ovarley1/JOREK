@@ -1,47 +1,15 @@
-!> The three logically rectangular patches of a single-null X-point grid
-!! (core, SOL, private region), for the Schwarz decomposition of the SF
-!! path's blocks (mod_petsc_pc_xdd) and the patch multigrid hierarchies.
+!> The three logically rectangular patches of a lower single-null X-point grid
+!! (core, SOL, private region), for the X-point GMG hierarchy (mod_petsc_pc_gmg).
 !!
-!! Port of util/physics_pc_scaling/xpoint_probe/xpatch.py, which the offline
-!! probe validated on the 41x65 / 21x33 X-point decks.
-!!
-!! ELEMENT LATTICE. (A, B): A along the flux surface (the element's t
-!! direction, node DOF 3), B across it (s direction, node DOF 2). Vertex
-!! slots sit at
-!!     v1 = (A, B), v2 = (A, B+1), v3 = (A+1, B+1), v4 = (A+1, B)
-!! (edge v1-v2 is the s edge, v1-v4 the t edge). The lattice comes from a
-!! walk over element%neighbours in which two elements are adjacent through
-!! the vertex POSITIONS they share, not the nodes: at the X-point the four
-!! co-located nodes each serve only two of the eight elements around it, so
-!! edge neighbours there use different nodes.
-!!
-!! NODE LATTICE. (I, J) = (B, A): I across (the radial-line coordinate of
-!! the GMG smoothers), J along. An X-point position holds two nodes in the
-!! SOL and the core lattice (they share the value and the cross-line
-!! derivative DOFs, not the along-line one: the separatrix bends there).
-!!
-!! CLASSIFICATION. By the grid's topology, not by psi: once the plasma has
-!! evolved, the current psi_n = 1 no longer runs along the grid's separatrix
-!! and the elements next to it would change patch (43 of 4352 on the 41x65
-!! deck at t ~ 1000, which broke the core's rectangle). The core is every
-!! element within the shallowest breadth-first layer from the axis that
-!! touches the X-point (layer k = flux ring k + 1, the SOL meets the core
-!! only across the separatrix). The eight elements around the X-point form a
-!! cycle core, core, SOL, SOL, private, private, SOL, SOL; the private region
-!! is the flood fill from its two X-point elements that does not cross the
-!! two leg separatrices, walked edge by edge from the X-point to the
-!! targets; the rest is the SOL. Only the lower single null is handled. A
-!! patch that does not come out logically rectangular is refused.
-!!
-!! OVERLAP. delta element rows are hung off a patch by pure B steps, so the
-!! core's periodic seam and the private region's seam stay cuts: below the
-!! X-point the extension rows of the two sides meet in a slit (two distinct,
-!! unconnected nodes at one lattice position), not in an edge.
-!!
-!! OWNERSHIP. Every JOREK DOF is written back by exactly one patch (the
-!! restricted Schwarz update): the first of core, SOL, private whose
-!! non-overlapping elements hold it. The separatrix and the X-point go to the
-!! core, the legs' separatrix to the SOL.
+!! Element lattice (A, B): A along the flux surface (the element's t direction),
+!! B across it (s); vertex slots v1 = (A, B), v2 = (A, B+1), v3 = (A+1, B+1),
+!! v4 = (A+1, B). The lattice comes from a walk over element%neighbours in which
+!! elements are adjacent through the vertex POSITIONS they share: at the X-point
+!! four co-located nodes each serve only two of the eight elements around it.
+!! Node lattice (I, J) = (B, A). The patches follow the grid's topology, not psi:
+!! the core is the shallowest breadth-first layer from the axis that touches the
+!! X-point, the private region the flood fill from its two X-point elements that
+!! does not cross the leg separatrices, the rest the SOL.
 module mod_petsc_pc_xpatch
   implicit none
   private
@@ -58,19 +26,13 @@ module mod_petsc_pc_xpatch
 
   type :: xpatch_t
     character(len=12) :: name = ""
-    integer :: id = 0, delta = 0
     integer :: na = 0, nb = 0                    !< element lattice: A = 0..na-1, B = 0..nb-1
     logical :: periodic = .false.                !< A periodic (the core)
     logical :: axis = .false.                    !< node row I = 0 is the magnetic axis
     integer, allocatable :: eat(:,:)             !< (0:na-1, 0:nb-1) -> element (1-based)
-    integer :: ni = 0, nj = 0                    !< node lattice: I = 0..ni-1 across, J = 0..nj-1 along
-    integer :: ndof = 0                          !< DOFs of the patch (JOREK indices)
-    integer, allocatable :: dof(:)               !< patch-local 1..ndof -> JOREK index (1-based), ascending
-    integer, allocatable :: dI(:), dJ(:)         !< patch-local DOF -> node lattice position
-    logical, allocatable :: own(:)               !< patch-local DOF written back by this patch
+    integer :: ni = 0                            !< node rows I = 0..ni-1
     integer :: nxp = 0                           !< X-point positions in the node lattice
     integer :: xpI(4) = -1, xpJ(4) = -1
-    integer :: nmulti = 0                        !< node lattice positions holding > 1 node
   end type xpatch_t
 
 contains
@@ -82,30 +44,25 @@ contains
     xpatch_is_xgrid = xpoint .and. node_list%n_nodes /= n_flux * n_tht
   end function xpatch_is_xgrid
 
-  !--------------------------------------------------------------------
-  !> Build the three patches, each extended by delta element rows. ok =
-  !! .false. (and msg) when the grid is not a lower single-null X-point grid
-  !! of three logically rectangular patches.
-  !--------------------------------------------------------------------
-  subroutine xpatch_build(xp, delta, ok, msg)
-    use nodes_elements, only: node_list, element_list
+  !> Build the three patches. ok = .false. (and msg) when the grid is not a
+  !! lower single-null X-point grid of three logically rectangular patches.
+  subroutine xpatch_build(xp, ok, msg)
+    use nodes_elements, only: element_list
     use phys_module,    only: xcase, LOWER_XPOINT
     type(xpatch_t), intent(inout) :: xp(XP_NPATCH)
-    integer, intent(in)           :: delta
     logical, intent(out)          :: ok
     character(len=*), intent(out) :: msg
 
-    integer :: nn, ne, e, k, n, c, pax, pxp, j
-    integer, allocatable :: pid(:), pcnt(:), cls(:), owner(:)
+    integer :: ne, k, c, pax, pxp
+    integer, allocatable :: pid(:), pcnt(:), cls(:)
 
     ok = .false.; msg = ""
     if (xcase /= LOWER_XPOINT) then
       msg = "only the lower single-null X-point grid is handled (xcase /= LOWER_XPOINT)"
       return
     endif
-    nn = node_list%n_nodes; ne = element_list%n_elements
+    ne = element_list%n_elements
 
-    !--- co-located nodes: position ids
     call position_ids(pid, pcnt)
     pax = maxloc(pcnt, 1)                                  ! the axis: most nodes at one position
     pxp = -1
@@ -122,68 +79,33 @@ contains
       msg = "no X-point (no position with four co-located nodes)"
       return
     endif
-    !--- classification by the grid's topology (not by the evolving psi)
     allocate(cls(ne))
     call classify_topological(pid, pax, pxp, cls, ok, msg)
     if (.not. ok) return
 
-    !--- the patches
     do c = 1, XP_NPATCH
-      call build_patch(xp(c), c, delta, cls, pid, pxp, ok, msg)
+      call build_patch(xp(c), c, cls, pid, pxp, ok, msg)
       if (.not. ok) return
     enddo
-
-    !--- ownership: the first patch whose own elements (delta = 0) hold a DOF
-    allocate(owner(n_dof_all()))
-    owner = 0
-    do c = 1, XP_NPATCH
-      do e = 1, ne
-        if (cls(e) /= c) cycle
-        do k = 1, 4
-          n = element_list%element(e)%vertex(k)
-          do j = 1, 4
-            if (owner(node_list%node(n)%index(j)) == 0) owner(node_list%node(n)%index(j)) = c
-          enddo
-        enddo
-      enddo
-    enddo
-    if (any(owner == 0)) then
-      msg = "a DOF lies in no patch"
-      ok = .false.
-      return
-    endif
-    do c = 1, XP_NPATCH
-      allocate(xp(c)%own(xp(c)%ndof))
-      do k = 1, xp(c)%ndof
-        xp(c)%own(k) = (owner(xp(c)%dof(k)) == c)
-      enddo
-    enddo
-    ok = .true.
   end subroutine xpatch_build
 
-  !--------------------------------------------------------------------
-  !> One patch: element lattice by the position walk, delta overlap rows,
-  !! node lattice, DOF list.
-  !--------------------------------------------------------------------
-  subroutine build_patch(P, c, delta, cls, pid, pxp, ok, msg)
+  !> One patch: the element lattice by the position walk, its orientation and
+  !! the X-point's node lattice positions.
+  subroutine build_patch(P, c, cls, pid, pxp, ok, msg)
     use nodes_elements, only: node_list, element_list
     type(xpatch_t), intent(inout) :: P
-    integer, intent(in)  :: c, delta, cls(:), pid(:), pxp
+    integer, intent(in)  :: c, cls(:), pid(:), pxp
     logical, intent(out) :: ok
     character(len=*), intent(out) :: msg
 
-    integer :: ne, e, nb_, k, n, q, head, tail, nmem, dA, dB, a, b, amin, bmin, amax, bmax
-    integer :: i, j, nfront, nnext, d, kk, idx, ndof
-    integer, allocatable :: ca(:), cb(:), queue(:), front(:), fdir(:), nxt(:), ndir(:)
+    integer :: ne, e, nb_, k, n, q, head, tail, nmem, dA, dB, a, b, amin, bmin, amax, bmax, i, j, nj
+    integer, allocatable :: ca(:), cb(:), queue(:), npos(:,:), pnodes(:,:,:)
     logical, allocatable :: inP(:)
-    integer, allocatable :: posI(:), posJ(:), npos(:,:), pnodes(:,:,:)
     logical :: is_core, wrap
 
     ok = .false.
     ne = element_list%n_elements
-    P%id = c; P%delta = delta
     P%name = trim(XP_NAME(c))
-    if (delta > 0) write(P%name, '(A,A,I0)') trim(XP_NAME(c)), "+", delta
     is_core = (c == XP_CORE)
     P%periodic = is_core
 
@@ -228,34 +150,6 @@ contains
     if (is_core .and. .not. wrap) then
       msg = "the core patch does not close on itself"; return
     endif
-
-    !--- overlap: delta rows by pure B steps, away from the patch
-    allocate(front(ne), fdir(ne), nxt(ne), ndir(ne))
-    nfront = 0
-    do q = 1, tail
-      nfront = nfront + 1; front(nfront) = queue(q); fdir(nfront) = 0
-    enddo
-    do d = 1, delta
-      nnext = 0
-      do q = 1, nfront
-        e = front(q)
-        do k = 1, 4
-          nb_ = element_list%element(e)%neighbours(k)
-          if (nb_ <= 0 .or. nb_ > ne) cycle
-          if (inP(nb_)) cycle
-          if (.not. step(e, nb_, dA, dB)) cycle
-          if (dA /= 0) cycle
-          if (fdir(q) /= 0 .and. dB /= fdir(q)) cycle
-          if (fdir(q) == 0 .and. cls(nb_) == c) cycle
-          ca(nb_) = ca(e); cb(nb_) = cb(e) + dB
-          inP(nb_) = .true.
-          nnext = nnext + 1; nxt(nnext) = nb_; ndir(nnext) = dB
-          tail = tail + 1; queue(tail) = nb_
-        enddo
-      enddo
-      nfront = nnext
-      front(1:nfront) = nxt(1:nfront); fdir(1:nfront) = ndir(1:nfront)
-    enddo
 
     !--- lattice extents
     amin = huge(0); bmin = huge(0); amax = -huge(0); bmax = -huge(0)
@@ -320,16 +214,12 @@ contains
       endif
     endif
 
-    !--- node lattice and DOFs
+    !--- node lattice: at most four nodes per position; the X-point's positions
     P%ni = P%nb + 1
-    P%nj = P%na + 1
-    if (P%periodic) P%nj = P%na
-    ! a node may sit at two lattice positions (the SOL meets the X-point
-    ! twice, with the same two nodes), and a position may hold two nodes
-    allocate(npos(0:P%ni - 1, 0:P%nj - 1), pnodes(4, 0:P%ni - 1, 0:P%nj - 1))
+    nj = P%na + 1
+    if (P%periodic) nj = P%na
+    allocate(npos(0:P%ni - 1, 0:nj - 1), pnodes(4, 0:P%ni - 1, 0:nj - 1))
     npos = 0; pnodes = 0
-    allocate(posI(n_dof_all()), posJ(n_dof_all()))
-    posI = -1; posJ = -1
     P%nxp = 0
     do b = 0, P%nb - 1
       do a = 0, P%na - 1
@@ -352,24 +242,8 @@ contains
               endif
             endif
           endif
-          do kk = 1, 4
-            idx = node_list%node(n)%index(kk)
-            if (posI(idx) < 0) then
-              posI(idx) = i; posJ(idx) = j
-            endif
-          enddo
         enddo
       enddo
-    enddo
-    P%nmulti = count(npos > 1)
-    ndof = count(posI >= 0)
-    P%ndof = ndof
-    allocate(P%dof(ndof), P%dI(ndof), P%dJ(ndof))
-    q = 0
-    do idx = 1, size(posI)
-      if (posI(idx) < 0) cycle
-      q = q + 1
-      P%dof(q) = idx; P%dI(q) = posI(idx); P%dJ(q) = posJ(idx)
     enddo
     ok = .true.
 
@@ -425,10 +299,8 @@ contains
 
   end subroutine build_patch
 
-  !--------------------------------------------------------------------
   !> Position ids of the nodes: co-located nodes (the axis, the X-point)
   !! share one. pcnt(id) = nodes at that position.
-  !--------------------------------------------------------------------
   subroutine position_ids(pid, pcnt)
     use nodes_elements, only: node_list
     integer, allocatable, intent(out) :: pid(:), pcnt(:)
@@ -466,12 +338,11 @@ contains
     enddo
   end subroutine position_ids
 
-  !--------------------------------------------------------------------
-  !> cls(e) = XP_CORE / XP_SOL / XP_PRIV from the element adjacency alone
-  !! (see CLASSIFICATION in the module header). pax / pxp: the axis and
-  !! X-point position ids. ok = .false. (and msg) when the grid around the
-  !! X-point is not the single-null pattern.
-  !--------------------------------------------------------------------
+  !> cls(e) = XP_CORE / XP_SOL / XP_PRIV from the element adjacency alone (see
+  !! the module header). pax / pxp: the axis and X-point position ids. ok =
+  !! .false. (and msg) when the grid around the X-point is not the single-null
+  !! pattern: eight elements in the cycle core, core, SOL, SOL, private,
+  !! private, SOL, SOL.
   subroutine classify_topological(pid, pax, pxp, cls, ok, msg)
     use nodes_elements, only: element_list
     integer, intent(in)           :: pid(:), pax, pxp
@@ -546,7 +417,9 @@ contains
       nc = nc + 1
       if (nc <= 2) cores(nc) = i
     enddo
-    if (nc /= 2 .or. all(xadj(:, cores(1)) /= cores(2))) then
+    found = (nc == 2)
+    if (found) found = any(xadj(:, cores(1)) == cores(2))
+    if (.not. found) then
       msg = "the X-point does not have two adjacent core elements"; return
     endif
     last = cores(1); i = cores(2)
@@ -701,16 +574,6 @@ contains
     end function less
   end subroutine msort
 
-  !> Number of JOREK DOF indices (the largest index).
-  integer function n_dof_all()
-    use nodes_elements, only: node_list
-    integer :: n
-    n_dof_all = 0
-    do n = 1, node_list%n_nodes
-      n_dof_all = max(n_dof_all, maxval(node_list%node(n)%index(1:4)))
-    enddo
-  end function n_dof_all
-
   !> One line per patch, rank 0.
   subroutine xpatch_report(xp, my_id)
     type(xpatch_t), intent(in) :: xp(XP_NPATCH)
@@ -718,15 +581,13 @@ contains
     integer :: c, q
     if (my_id /= 0) return
     do c = 1, XP_NPATCH
-      write(*,'(A,A,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,L1,A,L1,A)', advance="no") &
-        "[Physics PC]   X-point patch ", trim(xp(c)%name), ": ", xp(c)%na, "x", xp(c)%nb, &
-        " elements, node lattice ", xp(c)%ni, "x", xp(c)%nj, ", ", xp(c)%ndof, " DOFs (", &
-        count(xp(c)%own), " own), periodic ", xp(c)%periodic, ", axis ", xp(c)%axis, &
+      write(*,'(A,A,A,I0,A,I0,A,L1,A,L1,A)', advance="no") "[Physics PC]   X-point patch ", trim(xp(c)%name), &
+        ": ", xp(c)%na, "x", xp(c)%nb, " elements, periodic ", xp(c)%periodic, ", axis ", xp(c)%axis, &
         ", X-point at (I,J)"
       do q = 1, xp(c)%nxp
         write(*,'(A,I0,A,I0,A)', advance="no") " (", xp(c)%xpI(q), ",", xp(c)%xpJ(q), ")"
       enddo
-      write(*,'(A,I0)') ", multi-node positions ", xp(c)%nmulti
+      write(*,*)
     enddo
   end subroutine xpatch_report
 

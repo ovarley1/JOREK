@@ -1,7 +1,7 @@
 !> The force operator W of the SF preconditioner's pair_w, the matrix ADDED
 !! to B_22: the curvature part of the composed momentum Schur complement
 !! (Chacon JCP 526 (2025) Eq. (19); the bending and kink parts go through
-!! pair_w's explicit (psi, j) rows, mod_petsc_pc_sf_mixed). With
+!! pair_w's explicit (psi, j) rows, mod_petsc_pc_sf). With
 !! [a,b] = a_R b_Z - a_Z b_R and p0 = rho0 T0,
 !!
 !!   W(du,v) = (theta dt)^2/opz int ( - 2 R^2 dZ v [p0,du] - 4 gamma R p0 dZ v dZ du ) dR dZ
@@ -21,7 +21,7 @@ module mod_pc_elt_matrix_force_fft
 
 contains
 
-subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v, gamma_w, vu_full)
+subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v)
 
   use mod_parameters
   use data_structure, only: type_element, type_node
@@ -40,8 +40,6 @@ subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v, gamma_w, vu_full)
   real*8, dimension(DFV, DFV), intent(out) :: ELM
   !> v_par's W terms (model600 only): zero here, for the common interface
   real*8, dimension(DFV, DFV, 3), intent(out), optional :: ELM_v
-  real*8, intent(in), optional :: gamma_w
-  logical, intent(in), optional :: vu_full
 
   real*8, dimension(n_plane, NFV, NFV) :: ELM_p
   real*8, dimension(n_gauss, n_gauss) :: x_g, x_s, x_t, y_s, y_t

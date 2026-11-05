@@ -1,3 +1,9 @@
+!> A mass matrix B applied as B^-1 by a fixed-degree Chebyshev iteration on
+!! additive Schwarz (overlap 1, local ICC(0)): corrector 3's rho / T mass
+!! inverse in the SF sweep. The preconditioned C1 mass has a mesh-independent
+!! condition number (Wathen, IMA J. Numer. Anal. 7 (1987)); the degree meets
+!! 2 rho^d <= TARGET for bounds from one Lanczos run, checked against the
+!! measured B-norm error. Without norms the apply is a fixed linear operator.
 module mod_petsc_pc_mass_cheb
 #ifdef USE_PETSC
   use mpi_mod
@@ -6,20 +12,6 @@ module mod_petsc_pc_mass_cheb
   use mod_petsc_raw_csr, only: blockmv_attach
   implicit none
   private
-
-  !--------------------------------------------------------------------
-  !> A mass matrix B applied as B^-1 by a fixed-degree Chebyshev iteration,
-  !! preconditioned by additive Schwarz (one subdomain per rank, overlap 1,
-  !! local ICC(0) on a nested-dissection ordering): corrector 3's rho / T
-  !! mass inverse in the SF sweep.
-  !!
-  !! The preconditioned C1 Hermite mass is mesh-independent (Wathen, IMA J.
-  !! Numer. Anal. 7 (1987) 449). The degree follows kappa, 2 rho^d <= TARGET
-  !! with rho = (sqrt k - 1)/(sqrt k + 1), from bounds of one Lanczos run per
-  !! run (B is geometry-only), gated: the measured B-norm error must meet the
-  !! bound, or the bounds are widened and the setup retries. Without norms
-  !! the apply is a fixed linear operator, so FGMRES around it stays valid.
-  !--------------------------------------------------------------------
   real*8, parameter  :: TARGET = 1.d-1   !< Chebyshev B-norm error bound per apply
   integer, parameter :: DEG_MIN = 2
 

@@ -1,3 +1,4 @@
+!> The physics PC's shared state (g_ctx), its log events and memory audit.
 module mod_petsc_pc_physics_ctx
 #ifdef USE_PETSC
   use mpi_mod
@@ -6,42 +7,23 @@ module mod_petsc_pc_physics_ctx
   implicit none
   public
 
-  ! The physics PC's shared state (g_ctx), its log events and memory audit.
-
   type :: type_physics_pc_ctx
-    logical :: reduced_ready  = .false.
-
-    !> Blocks of the Jacobian on the global SF path: B_ij = (equation i,
-    !! variable j), variables 1..6 = (psi, u, j, w, rho, T).
-    Mat :: B_11, B_12, B_13, B_16
-    Mat :: B_21, B_22, B_23, B_24, B_25, B_26
-    Mat :: B_31, B_33
-    Mat :: B_42, B_44
-    Mat :: B_51, B_52, B_55
-    Mat :: B_61, B_62, B_63, B_66
-
-    Mat :: K_pj_aij          !< pair_psi = [[B_11, B_13], [B_31, B_33]], packed
-
-    !> The composed force operator W (curvature part), one variable (u),
-    !! block size n_tor: models/model*/mod_pc_elt_matrix_force_fft.f90.
+    logical :: reduced_ready = .false.
+    !> The curvature part of the composed force operator, one variable (u),
+    !! block size n_tor (models/model*/mod_pc_elt_matrix_force_fft.f90).
     Mat :: W_force
     logical :: w_force_ready = .false.
-
-    !> v_par's sound-wave Schur terms (model600 with_vpar, stages b0 / b1),
-    !! from the same element pass: W_vv on B_77, W_vu (v_par row, u column)
-    !! on B_72, W_uv (u row, v_par column) on B_27.
+    !> v_par's sound-wave Schur terms (model600, stages b0 / b1): W_vv on
+    !! B_77, W_vu (v_par row, u column) on B_72, W_uv (u row, v_par column) on B_27.
     Mat :: W_vv, W_vu, W_uv
     logical :: w_v_ready = .false.
   end type type_physics_pc_ctx
 
   type(type_physics_pc_ctx), save :: g_ctx
 
-  ! PetscLogEvents for the physics PC: the rebuild/apply split of its wall
-  ! time. Read them with -log_view; the names share the "PhysPC_" prefix.
+  ! -log_view events of the physics PC ("PhysPC_*")
   PetscLogEvent, save :: pcev_elem_asm   = -1  !< the force-operator element assembly
-  PetscLogEvent, save :: pcev_extract    = -1  !< block extraction / family operator fill
-  PetscLogEvent, save :: pcev_build_suu  = -1  !< pair_w assembly
-  PetscLogEvent, save :: pcev_convert    = -1  !< pair_psi packing
+  PetscLogEvent, save :: pcev_extract    = -1  !< operator extraction / refill
   PetscLogEvent, save :: pcev_fact_pj    = -1  !< pair_psi solver setup
   PetscLogEvent, save :: pcev_fact_w     = -1  !< pair_w solver setup
   PetscLogEvent, save :: pcev_fact_rhot  = -1  !< rho and T solver setup
@@ -63,8 +45,6 @@ contains
 
     call PetscLogEventRegister("PhysPC_ElemAsm",   0, pcev_elem_asm,   ierr)
     call PetscLogEventRegister("PhysPC_Extract",   0, pcev_extract,    ierr)
-    call PetscLogEventRegister("PhysPC_BuildSuu",  0, pcev_build_suu,  ierr)
-    call PetscLogEventRegister("PhysPC_Convert",   0, pcev_convert,    ierr)
     call PetscLogEventRegister("PhysPC_FactPJ",    0, pcev_fact_pj,    ierr)
     call PetscLogEventRegister("PhysPC_FactW",     0, pcev_fact_w,     ierr)
     call PetscLogEventRegister("PhysPC_FactRhoT",  0, pcev_fact_rhot,  ierr)
@@ -76,11 +56,9 @@ contains
     pcev_registered = .true.
   end subroutine physics_pc_log_events_register
 
-  !> Peak resident set size of the process so far, in bytes (getrusage).
-  !! ru_maxrss is the fifth long of struct rusage (after two 16-byte timevals)
-  !! and is in bytes on macOS but in KiB on Linux. gfortran's preprocessor
-  !! defines no OS macro, so the unit is decided at run time: a peak below the
-  !! current RSS can only be KiB.
+  !> Peak resident set size of the process so far, in bytes: ru_maxrss of
+  !! getrusage, the fifth long of struct rusage, in KiB on Linux and bytes on
+  !! macOS; a peak below the current RSS can only be KiB.
   real*8 function physics_pc_peak_rss()
     use iso_c_binding, only: c_int, c_long
     interface
@@ -101,11 +79,8 @@ contains
     if (physics_pc_peak_rss < 0.5d0 * cur) physics_pc_peak_rss = physics_pc_peak_rss * 1024.d0
   end function physics_pc_peak_rss
 
-  !> Memory audit checkpoint, in GB: the live PETSc heap and its high-water
-  !! mark (tracked only under -log_view_memory or -malloc_debug, else 0), and
-  !! the process peak RSS. On macOS the RSS is load-dependent (the compressor
-  !! evicts pages under pressure), so the heap figures are the attribution;
-  !! MUMPS-internal memory is not on the PETSc heap (see physics_pc_mumps_mem).
+  !> Memory checkpoint in GB: the PETSc heap and its peak (tracked only with
+  !! -log_view_memory or -malloc_debug) and the process peak RSS.
   subroutine physics_pc_mem(tag, my_id)
     character(len=*), intent(in) :: tag
     integer, intent(in)          :: my_id
@@ -118,9 +93,8 @@ contains
       physics_pc_peak_rss() / 1.d9, " GB"
   end subroutine physics_pc_mem
 
-  !> Memory audit: MUMPS memory and factor size of a factored PREONLY KSP.
-  !! INFOG(22) = MB effectively used during factorisation, INFOG(29) = entries
-  !! in the factors (negative means millions). Silent if the PC is not MUMPS.
+  !> MUMPS memory (INFOG(22), MB) and factor entries (INFOG(29), negative =
+  !! millions) of a factored KSP; silent if its PC is not MUMPS.
   subroutine physics_pc_mumps_mem(ksp, label, my_id)
     KSP, intent(in)              :: ksp
     character(len=*), intent(in) :: label

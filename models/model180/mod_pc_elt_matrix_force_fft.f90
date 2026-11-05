@@ -9,7 +9,7 @@ module mod_pc_elt_matrix_force_fft
 
 contains
 
-subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v, gamma_w, vu_full)
+subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v)
 
   use mod_parameters
   use data_structure, only: type_element, type_node
@@ -21,8 +21,6 @@ subroutine pc_elt_matrix_force_fft(element, nodes, ELM, ELM_v, gamma_w, vu_full)
   real*8, dimension(n_tor*n_vertex_max*n_degrees, n_tor*n_vertex_max*n_degrees), intent(out) :: ELM
   !> v_par's sound-wave Schur terms (model600 only): unused, the common interface
   real*8, dimension(n_tor*n_vertex_max*n_degrees, n_tor*n_vertex_max*n_degrees, 3), intent(out), optional :: ELM_v
-  real*8, intent(in), optional :: gamma_w
-  logical, intent(in), optional :: vu_full
 
   ELM = 0.d0
   if (present(ELM_v)) ELM_v = 0.d0

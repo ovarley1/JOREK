@@ -1,9 +1,7 @@
+!> Element assembly of the SF preconditioner's force operator W into a
+!! one-variable PETSc BAIJ matrix (no mesh refinement, all toroidal modes on
+!! every process).
 module construct_pc_matrix_mod
-!----------------------------------------------------------------
-! Element assembly of the SF preconditioner's force operator W into a
-! 1-variable PETSc BAIJ matrix (no mesh refinement, all toroidal modes
-! on every process).
-!----------------------------------------------------------------
 #ifdef USE_PETSC
 #include "petsc/finclude/petsc.h"
 use petsc
@@ -14,21 +12,10 @@ public :: construct_force_operator_matrix
 
 contains
 
-!--------------------------------------------------------------------
-!> Zero out the rows of a 1-variable PC matrix that correspond to
-!! constrained boundary DOFs.
-!!
-!! Used for matrices that are ADDED to a B-block which already has BCs
-!! enforced (W, added to B_22). Setting those rows to exactly zero keeps
-!! B's boundary equations untouched; a ZBIG diagonal here would double
-!! B's ZBIG diagonal.
-!!
-!! Constrained DOFs per boundary type (matching the model's boundary_conditions):
-!!   type 1 (open field lines):  i_order ∈ {1, 2}  (value, ds)
-!!   type 2 (wall-aligned):      i_order ∈ {1, 3}  (value, dt)
-!!   type 3 (corner):            i_order ∈ {1, 2, 3}
-!! Toroidal modes flagged by `is_freebound(in, var_index)` are skipped.
-!--------------------------------------------------------------------
+!> Zero the rows of a one-variable PC matrix at the boundary DOFs the model
+!! constrains (boundary type 1: value and ds, 2: value and dt, 3: all three;
+!! modes with is_freebound skipped), so that adding it to a block keeps that
+!! block's boundary equations.
 subroutine zero_bc_rows_pc_matrix(pc_mat, var_index, local_elms, n_local_elms, &
                                    my_ind_min, my_ind_max)
 
@@ -65,9 +52,8 @@ subroutine zero_bc_rows_pc_matrix(pc_mat, var_index, local_elms, n_local_elms, &
     skip_mode(in) = is_freebound(in, var_index)
   enddo
 
-  ! Upper bound: each local element contributes up to n_vertex_max nodes,
-  ! each with up to 3 constrained DOFs across n_tor modes.
-  cap = n_local_elms * n_vertex_max * 3 * n_tor
+  ! a corner node constrains (n_order+1)/2 DOFs along each of its two directions
+  cap = n_local_elms * n_vertex_max * (n_order + 1) * n_tor
   if (cap < 1) cap = 1
   allocate(rows_to_zero(cap))
   n_rows_to_zero = 0
@@ -120,9 +106,7 @@ subroutine zero_bc_rows_pc_matrix(pc_mat, var_index, local_elms, n_local_elms, &
     enddo    ! iv
   enddo      ! i
 
-  ! Collective: every rank must call MatZeroRows even with n=0.
-  ! Diag value = 0  →  the rows become identically zero (no diagonal injection).
-  ! Duplicates in rows_to_zero are harmless (idempotent).
+  ! collective; diagonal 0, duplicates are harmless
   PetscCallA(MatZeroRows(pc_mat, n_rows_to_zero, rows_to_zero, 0.0d0, PETSC_NULL_VEC, PETSC_NULL_VEC, ierr))
 
   deallocate(rows_to_zero)
@@ -130,17 +114,12 @@ subroutine zero_bc_rows_pc_matrix(pc_mat, var_index, local_elms, n_local_elms, &
 
 end subroutine zero_bc_rows_pc_matrix
 
-!--------------------------------------------------------------------
-!> Assemble the force operator W, the matrix ADDED to B_22 (one variable,
-!! block size n_tor), with its constrained boundary rows zeroed. It is built
-!! on the linearisation state (mhd_sim), not on the Jacobian.
-!!
-!! With W_vv, W_vu, W_uv present (model600 with_vpar, stages b0 / b1) the
-!! same pass assembles v_par's sound-wave Schur terms (the element routine's
-!! ELM_v blocks 1 (v_par, v_par), 2 (v_par, u), 3 (u, v_par)).
-!--------------------------------------------------------------------
+!> Assemble the force operator W that is added to B_22 (one variable, block
+!! size n_tor) on the linearisation state. With W_vv, W_vu, W_uv present
+!! (model600, v_par stages b0 / b1) the same pass assembles v_par's
+!! sound-wave Schur terms.
 subroutine construct_force_operator_matrix(my_id, local_elms, n_local_elms, a_mat, mhd_sim, W_force, &
-                                           W_vv, W_vu, W_uv, gamma_w, vu_full)
+                                           W_vv, W_vu, W_uv)
 
   use mod_pc_elt_matrix_force_fft, only: pc_elt_matrix_force_fft
   use mod_parameters,  only: n_tor, n_degrees, n_vertex_max, var_u, var_Vpar
@@ -161,8 +140,6 @@ subroutine construct_force_operator_matrix(my_id, local_elms, n_local_elms, a_ma
   Mat, intent(inout) :: W_force
   Mat, intent(inout), optional :: W_vv, W_vu, W_uv
 #endif
-  real*8, intent(in), optional :: gamma_w    !< v_par's W terms: their adiabatic index
-  logical, intent(in), optional :: vu_full   !< ... W_vu with its R [p0,u] half
 
 #define NBV (n_vertex_max*n_degrees)
 #define DFV_CM (n_tor*NBV)
@@ -221,8 +198,7 @@ subroutine construct_force_operator_matrix(my_id, local_elms, n_local_elms, a_ma
     enddo
 
     if (do_v) then
-      call pc_elt_matrix_force_fft(element_thr(t), nodes_thr(:, t), ELM, &
-                                   ELM_v=ELMv, gamma_w=gamma_w, vu_full=vu_full)
+      call pc_elt_matrix_force_fft(element_thr(t), nodes_thr(:, t), ELM, ELM_v=ELMv)
     else
       call pc_elt_matrix_force_fft(element_thr(t), nodes_thr(:, t), ELM)
     endif
@@ -258,9 +234,8 @@ subroutine construct_force_operator_matrix(my_id, local_elms, n_local_elms, a_ma
 #ifdef USE_PETSC
   PetscCallA(MatAssemblyBegin(W_force, MAT_FINAL_ASSEMBLY, ierr))
   PetscCallA(MatAssemblyEnd  (W_force, MAT_FINAL_ASSEMBLY, ierr))
-  ! W is ADDED to blocks whose boundary rows are [ZBIG, 0, ...]: its own
-  ! entries there would destroy the constraint (5.9x the iterations at
-  ! tstep 10 although only 0.4% of ||W||), so they are zeroed.
+  ! W is added to blocks whose boundary rows are Dirichlet rows: its own
+  ! entries there would break the constraint
   if (eliminate_boundary_dofs) then
     call zero_bc_rows_pc_matrix(W_force, var_u, local_elms, n_local_elms, &
                                 a_mat%my_ind_min, a_mat%my_ind_max)

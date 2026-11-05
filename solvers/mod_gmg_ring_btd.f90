@@ -1,75 +1,44 @@
-!> Direct solvers for the GMG's ring smoother blocks (mod_petsc_pc_gmg).
-!!
-!! A ring block holds the rows of all nodes J = 0..nn-1 of one flux surface
-!! (and, with harm_pair 2, all toroidal slots). C1 elements couple a node to
-!! J +- 1 only, so the block is a PERIODIC block-tridiagonal chain of dense
-!! node blocks: D_J = A(J, J), U_J = A(J, J+1), L_J = A(J, J-1), indices mod
-!! nn. Two factorisations of it, both with partial pivoting inside the node
-!! blocks only (none across nodes):
-!!  - RS_THOMAS: block LU of nodes 0..nn-2 bordered by the last node (the
-!!    periodic coupling becomes a fill column C and row R);
-!!  - RS_HYB: Thomas / reduction hybrid (partitioned block LU). ns separator
-!!    nodes cut the ring into ns segments; block Thomas eliminates every
-!!    segment's interior, independently of the others, with its fill towards
-!!    the segment's two separators; the separators' Schur complement, again
-!!    a periodic block-tridiagonal chain of ns nodes, is solved dense (ns <=
-!!    3) or by block Thomas. Thomas's work (ns = 1 is Thomas, with node 0 as
-!!    the corner), with ns-way parallelism inside a ring and two barriers per
-!!    solve.
-!! Both store ~5 bs^2 per node (the LAPACK band of the interleaved ring
-!! order ~8.4 bs^2) and work on dense blocks (BLAS 3 / 2).
-!!
-!! Block cyclic reduction (as BCYCLIC, Hirshman et al., JCP 229 (2010) 6392,
-!! but periodic and threaded level by level) was tried and removed
-!! (2026-10-13): no faster than Thomas with many rings per rank, slower
-!! than the hybrid with few, and ~2 barriers per level.
-!!
-!! A ring's storage is one segment a(1:tot): per node D, U, L (bs_J x bs_J,
-!! bs_J x bs_J+1, bs_J x bs_J-1, column-major), then the method's fill. The
-!! pivot blocks stay LU-factored (explicit inverses, one gemv per solve,
-!! gave no gain on tok, the solves being bandwidth-bound, and raised the
-!! ring residual 5e-10 -> 2e-8); their pivots take one integer per row,
-!! piv(rp(J)+1 : rp(J+1)). Vectors are in block order: node J's rows at
-!! x(rp(J)+1 : rp(J+1)). No PETSc here.
-!!
-!! Mixed precision (gmg ring_single): the factorisation runs in double (the
-!! caller's scratch); its result, rounded to single, serves the *_sp solves,
-!! which read half the bytes. The smoothing solves are bandwidth-bound, and
-!! a smoother needs no more than single accuracy. The solves exist once, in
-!! mod_gmg_ring_btd_solve.inc, included for both kinds.
+!> Direct solvers for the ring and line blocks of the GMG smoothers
+!! (mod_petsc_pc_gmg). A ring block (all nodes J = 0..nn-1 of one flux surface)
+!! is a periodic block-tridiagonal chain of dense node blocks D_J = A(J, J),
+!! U_J = A(J, J+1), L_J = A(J, J-1), indices mod nn; an open chain (a radial
+!! line, a ring cut by a rank boundary) is one with zero wrap couplings. Both
+!! factorisations pivot inside the node blocks only:
+!!  - RS_THOMAS: block LU of nodes 0..nn-2 bordered by the last node;
+!!  - RS_HYB: ns separator nodes cut the ring into segments, each eliminated by
+!!    block Thomas independently (in parallel); the separators' Schur complement,
+!!    a periodic chain of ns nodes, is solved dense (ns <= 3) or by RS_THOMAS
+!!    (partitioned block LU, Wang, ACM TOMS 7 (1981) 170).
+!! Factored in double, pivot blocks inverted (btd_invert); the smoothing solves
+!! (mod_gmg_ring_btd_solve.inc) run on the factors rounded to single.
 module mod_gmg_ring_btd
   implicit none
   private
 
-  integer, parameter, public :: RS_LAPACK = 0, RS_THOMAS = 1, RS_HYB = 2
-  !> node-block products up to this many entries skip the BLAS (*gemv_s)
+  integer, parameter, public :: RS_THOMAS = 1, RS_HYB = 2
+  !> node-block products up to this many entries skip the BLAS (sgemv_s)
   integer, parameter :: GEMV_SMALL = 1024
 
+  !> One ring's layout in its storage a(1:tot): per node D, U, L (column-major),
+  !! then the method's fill. Vectors are in block order, node J at x(rp(J)+1 : rp(J+1)).
   type, public :: btd_ring
     integer :: meth = 0, nn = 0
     logical :: inv = .false.                        !< pivot blocks hold D~_J^-1 (btd_invert)
     integer, allocatable :: bs(:), rp(:)            !< (0:nn-1) node rows, (0:nn) row offsets
     integer(8), allocatable :: od(:), ou(:), ol(:)  !< (0:nn-1) offsets of D, U, L (0-based)
-    integer(8), allocatable :: oc(:), orr(:)        !< Thomas, hybrid: border column C_J, row R_J
-    ! hybrid: separator k = node sep(k) (sep(0) = 0), the left end of
-    ! segment k, whose interior runs to hyb_end(k); per segment the Schur
-    ! blocks of its separators a = sep(k), b = sep(k+1): S_ab, S_ba, S_bb
-    ! (S_aa goes straight into D_a). The separators' system (nf rows) is
-    ! dense at of (ns <= 3), else the Thomas ring sub at of.
-    integer :: ns = 0, nf = 0
-    integer(8) :: of = 0
-    integer, allocatable :: sep(:)
-    integer(8), allocatable :: osab(:), osba(:), osbb(:)
-    type(btd_ring), allocatable :: sub
+    integer(8), allocatable :: oc(:), orr(:)        !< fill: border column C_J, row R_J
+    integer :: ns = 0, nf = 0                       !< hybrid: segments, separator rows
+    integer(8) :: of = 0                            !< hybrid: offset of the separators' system
+    integer, allocatable :: sep(:)                  !< hybrid: separator k = node sep(k), sep(0) = 0
+    integer(8), allocatable :: osab(:), osba(:), osbb(:)  !< hybrid: segment k's separator Schur blocks
+    type(btd_ring), allocatable :: sub              !< hybrid, ns > 3: the separators' ring
     integer(8) :: tot = 0                           !< storage (doubles)
   end type btd_ring
 
-  public :: btd_plan, btd_index, btd_factor, btd_solve, btd_matvec, btd_solve_sp
-  public :: btd_equil, btd_invert
-  public :: hyb_end, hyb_fac_seg, hyb_fac_sep, hyb_sol_fwd, hyb_sol_sep, hyb_sol_bwd
-  public :: hyb_sol_fwd_sp, hyb_sol_sep_sp, hyb_sol_bwd_sp
+  public :: btd_plan, btd_index, btd_factor, btd_equil, btd_invert, btd_solve_sp
+  public :: hyb_end, hyb_fac_seg, hyb_fac_sep, hyb_sol_fwd_sp, hyb_sol_sep_sp, hyb_sol_bwd_sp
 
-  external :: dgetrf, dgetrs, dgetri, dgemm, dgemv, sgetrs, sgemv
+  external :: dgetrf, dgetrs, dgetri, dgemm, sgetrs, sgemv
 
 contains
 
@@ -82,7 +51,7 @@ contains
     integer :: J, c, k, i
     integer(8) :: t
 
-    rg%meth = meth; rg%nn = nn
+    rg%meth = meth; rg%nn = nn; rg%inv = .false.
     if (allocated(rg%bs)) deallocate(rg%bs, rg%rp, rg%od, rg%ou, rg%ol)
     if (allocated(rg%oc)) deallocate(rg%oc, rg%orr)
     if (allocated(rg%sep)) deallocate(rg%sep, rg%osab, rg%osba, rg%osbb)
@@ -182,27 +151,14 @@ contains
     btd_index = btd_index + int(ic - 1, 8) * rg%bs(jr) + ir
   end function btd_index
 
-  !> y = A x from the unfactored storage a (the D, U, L blocks)
-  subroutine btd_matvec(rg, a, x, y)
-    type(btd_ring), intent(in) :: rg
-    real*8, intent(in)  :: a(*), x(*)
-    real*8, intent(out) :: y(*)
-    integer :: J, b, jn, jp
-    do J = 0, rg%nn - 1
-      b = rg%bs(J); jn = modulo(J + 1, rg%nn); jp = modulo(J - 1, rg%nn)
-      call dgemv('N', b, b, 1.d0, a(rg%od(J) + 1), b, x(rg%rp(J) + 1), 1, 0.d0, y(rg%rp(J) + 1), 1)
-      call dgemv('N', b, rg%bs(jn), 1.d0, a(rg%ou(J) + 1), b, x(rg%rp(jn) + 1), 1, 1.d0, y(rg%rp(J) + 1), 1)
-      call dgemv('N', b, rg%bs(jp), 1.d0, a(rg%ol(J) + 1), b, x(rg%rp(jp) + 1), 1, 1.d0, y(rg%rp(J) + 1), 1)
-    enddo
-  end subroutine btd_matvec
-
   !> Factor the ring in place, serially. info /= 0: a node block was singular.
   subroutine btd_factor(rg, a, piv, info)
-    type(btd_ring), intent(in) :: rg
+    type(btd_ring), intent(inout) :: rg
     real*8, intent(inout)  :: a(*)
     integer, intent(inout) :: piv(*)
     integer, intent(out)   :: info
     integer :: k
+    rg%inv = .false.
     if (rg%meth == RS_THOMAS) then
       call thomas_factor(rg, a, piv, info)
       return
@@ -263,15 +219,11 @@ contains
     end subroutine addb
   end subroutine thomas_factor
 
-  ! ---- Thomas / reduction hybrid: the segments are independent (each
-  ! writes only its own interior, its fill and its left separator's D), so
-  ! a caller may run them on threads, across rings too; hyb_fac_sep then
-  ! needs all of a ring's segments.
-
-  !> segment k: block Thomas over its interior z = a+1..e (a = sep(k), b =
-  !! the next separator). In place: D_z -> LU(D~_z), U_z -> D~_z^-1 U~_z (G,
-  !! towards b at z = e), C_z -> H_z = D~_z^-1 C~_z (a's fill column), R_z ->
-  !! R~_z (a's fill row); D_a -= sum R~ H, and S_ab, S_ba, S_bb stored
+  !> Hybrid, segment k: block Thomas over its interior z = a+1..e (a = sep(k),
+  !! b = the next separator). Writes only the segment's interior, its fill and
+  !! D_a, so the segments of all rings may run on threads; hyb_fac_sep follows.
+  !! In place: D_z -> LU(D~_z), U_z -> D~_z^-1 U~_z, C_z -> H_z = D~_z^-1 C~_z,
+  !! R_z -> R~_z; D_a -= sum R~ H; S_ab, S_ba, S_bb stored.
   subroutine hyb_fac_seg(rg, a, piv, k, info)
     type(btd_ring), intent(in) :: rg
     real*8, intent(inout)  :: a(*)
@@ -315,16 +267,16 @@ contains
                0.d0, a(rg%osbb(k) + 1), bb)
   end subroutine hyb_fac_seg
 
-  !> the separators' system, after all segments: separator k's D (with
-  !! S_aa) + S_bb of segment k-1, couplings S_ab(k) to k+1 and S_ba(k-1) to
-  !! k-1; LU-factored, dense or by Thomas, its pivots in the separators'
-  !! piv segments in order
+  !> Hybrid, after all segments: the separators' system (separator k's D with
+  !! S_aa, + S_bb of segment k-1, couplings S_ab(k), S_ba(k-1)), LU-factored
+  !! dense or by Thomas; its pivots go to the separators' piv segments.
   subroutine hyb_fac_sep(rg, a, piv, info)
-    type(btd_ring), intent(in) :: rg
+    type(btd_ring), intent(inout) :: rg
     real*8, intent(inout)  :: a(*)
     integer, intent(inout) :: piv(*)
     integer, intent(out)   :: info
     integer :: ns, k, kp, kn, q, co(0:rg%ns), ipv(rg%nf)
+    rg%inv = .false.
     ns = rg%ns
     co(0) = 0
     do k = 0, ns - 1
@@ -387,14 +339,10 @@ contains
     end subroutine cpy
   end subroutine hyb_fac_sep
 
-  !> a4 = a, rounded to single: the factors of one ring for the *_sp solves
-  !> Symmetric equilibration S A S of an unfactored ring, S = |diag A|^-1/2
-  !! (1 where the diagonal is zero), before ring_single's factorisation. The
-  !! C1 DOFs of one node differ in scale by the element sizes (d^2/ds dt by
-  !! their product: 1e-11..1e-16 of the value DOF on fine X-point grids), so
-  !! an unscaled block's single-precision factor is cond * 6e-8 wrong; the
-  !! scaled one only by its physical condition. The solves then take
-  !! x = S (S A S)^-1 S b.
+  !> Symmetric equilibration S A S of an unfactored ring, S = |diag A|^-1/2 (1
+  !! where the diagonal is zero): a node's C1 DOFs differ in scale by the element
+  !! sizes, so the unscaled single-precision factor would be cond * 6e-8 wrong.
+  !! The solves then take x = S (S A S)^-1 S b.
   subroutine btd_equil(rg, a, sc)
     type(btd_ring), intent(in) :: rg
     real*8, intent(inout) :: a(*)
@@ -433,11 +381,10 @@ contains
     enddo
   end subroutine btd_equil
 
-  !> After btd_factor: the LU-factored pivot blocks (Thomas: every node;
-  !! hybrid: the segments' interiors) replaced by their inverses (dgetri),
-  !! so a solve applies D~_J^-1 by one gemv. In single precision this is the
-  !! more accurate form on the ill-conditioned pair_w rings (forward error
-  !! 1e-6 vs 1e-4 with the LU); the separators' system keeps its LU.
+  !> After a factorisation: the LU-factored pivot blocks (Thomas: every node;
+  !! hybrid: the segments' interiors) replaced by their inverses, so a solve
+  !! applies D~_J^-1 by one gemv. In single precision this is the more accurate
+  !! form on ill-conditioned rings; the separators' system keeps its LU.
   subroutine btd_invert(rg, a, piv)
     type(btd_ring), intent(inout) :: rg
     real*8, intent(inout) :: a(*)
@@ -467,38 +414,6 @@ contains
     end subroutine inv1
   end subroutine btd_invert
 
-  ! ---- the solves, double (as factored) and single (rounded factors)
-#define RK 8
-#define GEMV dgemv
-#define GEMV_S dgemv_s
-#define GETRS dgetrs
-#define BTD_SOLVE btd_solve
-#define THOMAS_SOLVE thomas_solve
-#define HYB_SOL_FWD hyb_sol_fwd
-#define HYB_SOL_SEP hyb_sol_sep
-#define HYB_SOL_BWD hyb_sol_bwd
-#define NODE_SOLVE node_solve
-#include "mod_gmg_ring_btd_solve.inc"
-#undef RK
-#undef GEMV
-#undef GEMV_S
-#undef GETRS
-#undef BTD_SOLVE
-#undef THOMAS_SOLVE
-#undef HYB_SOL_FWD
-#undef HYB_SOL_SEP
-#undef HYB_SOL_BWD
-#undef NODE_SOLVE
-#define RK 4
-#define GEMV sgemv
-#define GEMV_S sgemv_s
-#define GETRS sgetrs
-#define BTD_SOLVE btd_solve_sp
-#define THOMAS_SOLVE thomas_solve_sp
-#define HYB_SOL_FWD hyb_sol_fwd_sp
-#define HYB_SOL_SEP hyb_sol_sep_sp
-#define HYB_SOL_BWD hyb_sol_bwd_sp
-#define NODE_SOLVE node_solve_sp
 #include "mod_gmg_ring_btd_solve.inc"
 
 end module mod_gmg_ring_btd

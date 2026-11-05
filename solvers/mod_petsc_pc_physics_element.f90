@@ -71,7 +71,7 @@ contains
     use construct_pc_matrix_mod, only: construct_force_operator_matrix
     use data_structure,  only: type_SP_MATRIX
     use mod_simulation_data, only: type_MHD_SIM
-    use mod_petsc_pc_sf_solver, only: sf_vpar_w_assembled, sf_vpar_gamma_w, sf_vpar_wvu_full
+    use mod_petsc_pc_sf_solver, only: sf_vpar_w_assembled
 
     integer,              intent(in) :: my_id
     integer, pointer,     intent(in) :: local_elms(:)
@@ -109,8 +109,7 @@ contains
       endif
       call construct_force_operator_matrix(my_id, local_elms, n_local_elms, a_mat, &
                                            mhd_sim, g_ctx%W_force, &
-                                           W_vv=g_ctx%W_vv, W_vu=g_ctx%W_vu, W_uv=g_ctx%W_uv, &
-                                           gamma_w=sf_vpar_gamma_w(), vu_full=sf_vpar_wvu_full())
+                                           W_vv=g_ctx%W_vv, W_vu=g_ctx%W_vu, W_uv=g_ctx%W_uv)
       g_ctx%w_v_ready = .true.
     else
       call construct_force_operator_matrix(my_id, local_elms, n_local_elms, a_mat, &

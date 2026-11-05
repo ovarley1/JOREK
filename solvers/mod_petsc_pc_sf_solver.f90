@@ -1,3 +1,7 @@
+!> The solver of one diagonal block of the SF sweep (mod_petsc_pc_sf), with
+!! two backends: FGMRES around one V-cycle of the geometric multigrid
+!! (mod_petsc_pc_gmg), or PREONLY + MUMPS LU as the exact reference. The GMG
+!! configuration is fixed here, per block, rather than in the namelist.
 module mod_petsc_pc_sf_solver
 #ifdef USE_PETSC
   use mpi_mod
@@ -5,87 +9,47 @@ module mod_petsc_pc_sf_solver
   use petsc
   use mod_petsc_pc_physics_ctx, only: physics_pc_mumps_mem
   use mod_petsc_pc_blocks,      only: pc_print_block_setup
+  use mod_petsc_pc_gmg,         only: GMG_SM_RINGS, GMG_SM_LINES, GMG_SM_ZEBRA_RINGS
   implicit none
   private
-
-  !--------------------------------------------------------------------
-  !> One type for every diagonal block of the SF sweep (mod_petsc_pc_sf),
-  !! with two backends:
-  !!   SF_GMG  FGMRES around one V-cycle of the C1 geometric multigrid
-  !!           (mod_petsc_pc_gmg), hierarchy instance gmg_inst; all packed
-  !!           fields of a node share the smoother blocks.
-  !!   SF_LU   PREONLY + MUMPS LU, the exact reference.
-  !! The GMG configuration is fixed below rather than in the namelist: each
-  !! constant is the value the recorded measurements were taken at.
-  !--------------------------------------------------------------------
 
   integer, parameter, public :: SF_LU  = 1
   integer, parameter, public :: SF_GMG = 2
 
-  !--- GMG smoothers (codes of mod_petsc_pc_gmg) ----------------------------
-  !> Radial-line block Jacobi: rho.
-  integer, parameter, public :: SF_GMG_SMOOTHER_LINES = 5
-  !> Zebra rings inside the switch radius (median r dtheta/dr = 1), zebra
-  !! radial lines outside (GMGPolar, Bourne et al. JCP 488 (2023)): pair_psi,
-  !! (psi, j) smoothed collectively (Chacon JCP 526 (2025) S4.1).
-  integer, parameter, public :: SF_GMG_SMOOTHER_ZEBRA_RINGS = 8
-  !> Flux-surface ring blocks: pair_w, whose psi - u coupling theta dt Bpar
-  !! runs along the field lines at large dt, and T (chi_par diffusion along
-  !! B; ZK_par 1-1000 at one V-cycle where radial lines took up to 5). Ring
-  !! smoothers also take SF_GMG_RING_OVERLAP and SF_GMG_SEMI_R.
-  integer, parameter, public :: SF_GMG_SMOOTHER_RINGS = 4
-  !> Rings cut by a rank boundary are completed from the neighbours (RAS
-  !! along J); 2 already fetches every cut ring whole.
-  integer, parameter, public :: SF_GMG_RING_OVERLAP = 2
-  !> Radial-only coarsening until the median cell aspect r dtheta/dr is 2
-  !! (-1 = that level count from the grid): ring blocks leave the radial
-  !! couplings to the coarse grid, which a 2:1 full coarsening cannot take.
+  !> Radial-line blocks: rho, v_par v0.
+  integer, parameter, public :: SF_GMG_SMOOTHER_LINES = GMG_SM_LINES
+  !> Zebra rings inside the radius where the median cell aspect r dtheta/dr
+  !! reaches 1, zebra radial lines outside (Bourne et al., JCP 488 (2023)):
+  !! pair_psi, with (psi, j) in one block (Chacon, JCP 526 (2025) S4.1).
+  integer, parameter, public :: SF_GMG_SMOOTHER_ZEBRA_RINGS = GMG_SM_ZEBRA_RINGS
+  !> Flux-surface ring blocks: pair_w, whose psi - u coupling runs along the
+  !! field lines at large dt, and T and v_par b0 (diffusion along B).
+  integer, parameter, public :: SF_GMG_SMOOTHER_RINGS = GMG_SM_RINGS
+  !> Ring smoothers coarsen radially only until the median cell aspect is 2
+  !! (-1: the level count follows from the grid).
   integer, parameter, public :: SF_GMG_SEMI_R = -1
-  !> Axis block rings: on the pairs -2 = automatic (gmg_setup_operator: 0, the
-  !! shared axis value only, unless the axis is not collapsed and the I = 0
-  !! ring would be a large dense block), 0..1 on the scalar blocks. Larger
-  !! axis blocks were the strong-scaling floor.
+  !> Axis block extent in rings: -2 = automatic on the pairs, 1 on the scalars.
   integer, parameter, public :: SF_GMG_AXIS_RINGS_PAIRS = -2
   integer, parameter, public :: SF_GMG_AXIS_RINGS_RHOT  = 1
-  !> Radial lines extended by one node into the neighbouring ranks (RAS, Cai
-  !! & Sarkis SISC 21 (1999)): JOREK partitions ring by ring, so every rank
-  !! boundary cuts every line.
-  integer, parameter, public :: SF_GMG_LINE_OVERLAP = 1
-  !> Axis blocks over J-sector ranks (mod_petsc_pc_gmg_axis); -1 = the cost
-  !! model's count. Exact, gated against the LU on the first build.
-  integer, parameter, public :: SF_GMG_AXIS_SECTORS = -1
-  !> Level and coupling-block matvecs on the OpenMP block kernel
-  !! (jorek_blockmv_attach.c).
-  integer, parameter, public :: SF_BLOCKMV = 1
-  !> Coarse levels (>= 1) smooth with Richardson on the smoother blocks: no
-  !! global reductions below level 0, the V-cycle's strong-scaling floor.
-  integer, parameter, public :: SF_GMG_RICH_FROM = 1
-  !> Richardson scale: zebra sweeps take the full step, the additive
-  !! line / ring Jacobi blocks are damped (undamped ring Jacobi is no
-  !! smoother where the mass is small against the radial coupling).
+  !> Coarse-level Richardson scale: full steps for zebra sweeps, damped for
+  !! the additive ring / line blocks.
   real*8,  parameter, public :: SF_GMG_RICH_OMEGA_ZEBRA = 1.0d0, SF_GMG_RICH_OMEGA_ADDITIVE = 0.8d0
 
-  !--- V-cycle shapes (gmg_opts_t pre0 / post0 / nsmooth_c) -----------------
-  !> pair_psi V(0,10), 2 steps per side below: from a psi-row right-hand
-  !! side the coarse correction leaves a j-row residual at the edge that only
-  !! level-0 post-smoothing removes.
+  !> V-cycle shapes: level-0 pre / post steps, steps per side below. pair_psi
+  !! needs the long level-0 post-smoothing: from a psi-row right-hand side the
+  !! coarse correction leaves a j-row residual at the edge.
   integer, parameter, public :: SF_PJ_PRE0 = 0, SF_PJ_POST0 = 10, SF_PJ_NSC = 2
-  !> pair_w V(0,6), 2 steps per side below (each coarse step is a neighbour
-  !! exchange on levels with few rows per rank).
-  integer, parameter, public :: SF_W_PRE0 = 0, SF_W_POST0 = 6, SF_W_NSC = 2
-  !> The toroidal slots per GMG smoother block, set by
-  !! physics_pc_sf_harm_couple: all slots of a node (cross-|n| coupling), or
-  !! a harmonic's cos and sin slots (d_phi maps one to the other).
+  integer, parameter, public :: SF_W_PRE0  = 0, SF_W_POST0  = 6,  SF_W_NSC  = 2
+  !> Toroidal slots per smoother block: a harmonic's cos and sin, or all.
   integer, parameter, public :: SF_GMG_HARM_PAIR = 1, SF_GMG_HARM_ALL = 2
   integer, save, public :: sf_gmg_harm = SF_GMG_HARM_ALL
-  !> FGMRES budget around a V-cycle: the packed pairs, the scalar blocks
+  !> FGMRES iteration caps around a V-cycle: the pairs, the scalar blocks.
   integer, parameter, public :: SF_GMG_MAXITS      = 30
   integer, parameter, public :: SF_GMG_MAXITS_RHOT = 10
 
-  !--- v_par stages (physics_pc_sf_vpar_stage) -------------------------------
-  integer, parameter, public :: SF_VPAR_V0 = 0   !< B_77 last
-  integer, parameter, public :: SF_VPAR_B0 = 1   !< B_77 + W_vv after pair_w
-  integer, parameter, public :: SF_VPAR_B1 = 2   !< v_par in pair_w (mode split)
+  !> v_par stages (physics_pc_sf_vpar_stage): B_77 last; B_77 + W_vv after
+  !! pair_w; v_par in pair_w (mode split).
+  integer, parameter, public :: SF_VPAR_V0 = 0, SF_VPAR_B0 = 1, SF_VPAR_B1 = 2
 
   type, public :: block_solver_t
     KSP     :: ksp
@@ -95,20 +59,18 @@ module mod_petsc_pc_sf_solver
     Vec     :: pfac                        !< rhs factor of the decoupled penalty rows, if penal
     logical :: penal    = .false.
     logical :: created  = .false.
-    integer :: gmg_inst = 0
     integer :: its_sum  = 0, its_max = 0, nsolve = 0
-    integer :: nfail    = 0                !< unconverged solves (its cap, failed PC)
-    real*8  :: t_sum    = 0.d0             !< wall time in its solves (this rank)
-    character(len=56) :: label = ""
+    integer :: nfail    = 0                !< unconverged solves
+    real*8  :: t_sum    = 0.d0             !< wall time in its solves
+    character(len=32) :: label = ""
   end type block_solver_t
 
   public :: sf_solver_setup, sf_solver_apply, sf_solver_reset_counters, sf_solver_report
-  public :: sf_split_parts, sf_opz
-  public :: sf_vpar_stage, sf_vpar_wmask, sf_vpar_gamma_w, sf_vpar_w_assembled, sf_vpar_wvu_full
+  public :: sf_split_parts, sf_opz, sf_vpar_stage, sf_vpar_w_assembled
 
 contains
 
-  !> physics_pc_sf_vpar_stage -> SF_VPAR_*; -1 for an unknown string.
+  !> physics_pc_sf_vpar_stage as SF_VPAR_*, -1 for an unknown string.
   integer function sf_vpar_stage()
     use phys_module, only: physics_pc_sf_vpar_stage
     select case (trim(adjustl(physics_pc_sf_vpar_stage)))
@@ -119,42 +81,7 @@ contains
     end select
   end function sf_vpar_stage
 
-  !> -sf_vpar_w: v_par's W terms in b0 / b1, bit 0 W_vv on B_77, bit 1 W_vu
-  !! on B_72, bit 2 W_uv on B_27 (b1 only). Default all; 0 = the stage
-  !! without the sound-wave Schur terms.
-  integer function sf_vpar_wmask()
-    PetscInt :: iv
-    PetscBool :: set
-    PetscErrorCode :: ierr
-    iv = 3
-    if (sf_vpar_stage() == SF_VPAR_B1) iv = 7
-    call PetscOptionsGetInt(PETSC_NULL_OPTIONS, PETSC_NULL_CHARACTER, "-sf_vpar_w", iv, set, ierr)
-    sf_vpar_wmask = int(iv)
-  end function sf_vpar_wmask
-
-  !> -sf_vpar_gamma_w: the adiabatic index of v_par's W terms (default
-  !! GAMMA; strong parallel conduction is closer to isothermal, 1).
-  real*8 function sf_vpar_gamma_w()
-    use phys_module, only: gamma
-    PetscReal :: rv
-    PetscBool :: set
-    PetscErrorCode :: ierr
-    rv = gamma
-    call PetscOptionsGetReal(PETSC_NULL_OPTIONS, PETSC_NULL_CHARACTER, "-sf_vpar_gamma_w", rv, set, ierr)
-    sf_vpar_gamma_w = rv
-  end function sf_vpar_gamma_w
-
-  !> -sf_vpar_wvu_full 1: W_vu with the whole p channel, psi_w in v_par's row.
-  logical function sf_vpar_wvu_full()
-    PetscInt :: iv
-    PetscBool :: set
-    PetscErrorCode :: ierr
-    iv = 0
-    call PetscOptionsGetInt(PETSC_NULL_OPTIONS, PETSC_NULL_CHARACTER, "-sf_vpar_wvu_full", iv, set, ierr)
-    sf_vpar_wvu_full = (iv /= 0)
-  end function sf_vpar_wvu_full
-
-  !> Are v_par's W terms assembled? With v_par, the SF path and stage b0 / b1.
+  !> Does the SF sweep need v_par's W terms (stages b0 / b1)?
   logical function sf_vpar_w_assembled()
     use mod_parameters, only: var_Vpar
     use phys_module,    only: use_physics_pc
@@ -162,13 +89,10 @@ contains
                           (sf_vpar_stage() == SF_VPAR_B0 .or. sf_vpar_stage() == SF_VPAR_B1)
   end function sf_vpar_w_assembled
 
-  !--------------------------------------------------------------------
   !> Configure slv to solve A. The KSP is created once and re-pointed at the
-  !! refilled (pattern-frozen) operator on every rebuild, so MUMPS and the
-  !! GMG reuse their symbolic phases. pre0 / post0 / nsmooth_c: the V-cycle
-  !! shape (absent: the smoother's default everywhere); axis_rings: default
-  !! SF_GMG_AXIS_RINGS_RHOT.
-  !--------------------------------------------------------------------
+  !! refilled operator on every rebuild, so MUMPS and the GMG reuse their
+  !! symbolic phases. The GMG KSP takes PETSc options with the prefix
+  !! sf_gmg<gmg_inst>_.
   subroutine sf_solver_setup(slv, A, backend, label, comm, my_id, rtol, gmg_inst, nfields, &
                              smoother, maxits, pre0, post0, nsmooth_c, axis_rings)
     use mod_petsc_pc_gmg, only: gmg_select, gmg_is_ready, gmg_build_prolongations, &
@@ -182,19 +106,18 @@ contains
     integer, intent(in)          :: gmg_inst   !< hierarchy instance (1..5)
     integer, intent(in)          :: nfields    !< fields packed per node in A
     integer, intent(in)          :: smoother   !< SF_GMG_SMOOTHER_*
-    integer, intent(in)          :: maxits     !< FGMRES budget
+    integer, intent(in)          :: maxits     !< FGMRES iteration cap
     integer, intent(in), optional :: pre0, post0, nsmooth_c, axis_rings
-
     PC :: pc
     PetscErrorCode :: ierr
     logical :: ok, fresh
     character(len=24) :: tstr
+    character(len=16) :: prefix
     type(gmg_opts_t) :: o
 
-    fresh        = .not. slv%created
-    slv%backend  = backend
-    slv%label    = label
-    slv%gmg_inst = gmg_inst
+    fresh       = .not. slv%created
+    slv%backend = backend
+    slv%label   = label
 
     select case (backend)
 
@@ -210,33 +133,24 @@ contains
       if (fresh) call physics_pc_mumps_mem(slv%ksp, label, my_id)
 
     case (SF_GMG)
-      o%smoother     = smoother
-      o%axis_rings   = SF_GMG_AXIS_RINGS_RHOT
-      o%line_overlap = SF_GMG_LINE_OVERLAP
-      o%axis_sectors = SF_GMG_AXIS_SECTORS
-      o%blockmv      = SF_BLOCKMV
-      o%bnd_drop     = 1               ! Dirichlet DOFs out of the coarse spaces
-      o%rich_from    = SF_GMG_RICH_FROM
-      o%rich_omega   = SF_GMG_RICH_OMEGA_ZEBRA
-      o%harm_pair    = sf_gmg_harm
-      if (smoother == SF_GMG_SMOOTHER_LINES .or. smoother == SF_GMG_SMOOTHER_RINGS) &
-        o%rich_omega = SF_GMG_RICH_OMEGA_ADDITIVE
-      if (smoother == SF_GMG_SMOOTHER_RINGS) then
-        o%ring_overlap = SF_GMG_RING_OVERLAP
-        o%semi_r       = SF_GMG_SEMI_R
-      endif
+      o%smoother   = smoother
+      o%axis_rings = SF_GMG_AXIS_RINGS_RHOT
+      o%harm_pair  = sf_gmg_harm
+      o%rich_omega = SF_GMG_RICH_OMEGA_ZEBRA
+      if (smoother /= SF_GMG_SMOOTHER_ZEBRA_RINGS) o%rich_omega = SF_GMG_RICH_OMEGA_ADDITIVE
+      if (smoother == SF_GMG_SMOOTHER_RINGS) o%semi_r = SF_GMG_SEMI_R
       if (present(pre0))       o%pre0       = pre0
       if (present(post0))      o%post0      = post0
       if (present(nsmooth_c))  o%nsmooth_c  = nsmooth_c
       if (present(axis_rings)) o%axis_rings = axis_rings
 
-      !--- the hierarchy: built once per instance, refilled per rebuild
-      call gmg_select(slv%gmg_inst)
+      ! the hierarchy is built once per instance and refilled per rebuild
+      call gmg_select(gmg_inst)
       if (.not. gmg_is_ready()) then
         call gmg_build_prolongations(A, comm, my_id, nfields, ok, opts=o)
         if (.not. ok) then
-          if (my_id == 0) write(*,'(A,A,A)') "[Physics PC]   FATAL: the GMG backend for ", trim(label), &
-            " needs the structured flux-surface grid."
+          if (my_id == 0) write(*,'(A,A,A)') "[Physics PC]   FATAL: no GMG hierarchy for ", trim(label), &
+            " on this grid (see the refusal above)."
           call MPI_Abort(MPI_COMM_WORLD, 1, ierr)
         endif
       endif
@@ -245,35 +159,26 @@ contains
       if (fresh) then
         call KSPCreate(comm, slv%ksp, ierr)
         call KSPSetType(slv%ksp, KSPFGMRES, ierr)
-        block
-          ! -sf_gmg<k>_maxits, and -sf_gmg<k>_ksp_* through the prefix
-          PetscInt :: mx
-          PetscBool :: set
-          character(len=32) :: nm
-          mx = maxits
-          write(nm, '(A,I0,A)') "-sf_gmg", slv%gmg_inst, "_maxits"
-          call PetscOptionsGetInt(PETSC_NULL_OPTIONS, PETSC_NULL_CHARACTER, trim(nm), mx, set, ierr)
-          call KSPGMRESSetRestart(slv%ksp, max(int(mx), 2), ierr)
-          call KSPSetTolerances(slv%ksp, rtol, 1.d-50, 1.d6, mx, ierr)
-          write(nm, '(A,I0,A)') "sf_gmg", slv%gmg_inst, "_"
-          call KSPSetOptionsPrefix(slv%ksp, trim(nm), ierr)
-        end block
+        call KSPGMRESSetRestart(slv%ksp, maxits, ierr)
+        call KSPSetTolerances(slv%ksp, rtol, 1.d-50, 1.d6, maxits, ierr)
+        write(prefix, '(A,I0,A)') "sf_gmg", gmg_inst, "_"
+        call KSPSetOptionsPrefix(slv%ksp, trim(prefix), ierr)
         call KSPSetFromOptions(slv%ksp, ierr)
         call KSPGetPC(slv%ksp, pc, ierr)
         call PCSetType(pc, PCSHELL, ierr)
-        select case (slv%gmg_inst)
+        select case (gmg_inst)
         case (1); call PCShellSetApply(pc, gmg_pc_apply_1, ierr)
         case (2); call PCShellSetApply(pc, gmg_pc_apply_2, ierr)
         case (3); call PCShellSetApply(pc, gmg_pc_apply_3, ierr)
         case (4); call PCShellSetApply(pc, gmg_pc_apply_4, ierr)
         case (5); call PCShellSetApply(pc, gmg_pc_apply_5, ierr)
         end select
-        call PCShellSetName(pc, trim(label)//" C1 GMG V-cycle", ierr)
+        call PCShellSetName(pc, trim(label)//" GMG V-cycle", ierr)
       endif
       call KSPSetOperators(slv%ksp, A, A, ierr)
       call KSPSetUp(slv%ksp, ierr)
       write(tstr,'(ES9.2)') rtol
-      call pc_print_block_setup(comm, label, "FGMRES + SHELL[C1 GMG V-cycle], rtol "//trim(adjustl(tstr)))
+      call pc_print_block_setup(comm, label, "FGMRES + GMG V-cycle, rtol "//trim(adjustl(tstr)))
 
     case default
       if (my_id == 0) write(*,'(A,I0)') "[Physics PC]   FATAL: sf_solver_setup got an unknown backend ", backend
@@ -284,7 +189,9 @@ contains
   end subroutine sf_solver_setup
 
   !> Solve A z = r through slv, with the block scaling as an exact similarity
-  !! (rhs is scaled in place: the caller refills it every apply), and count.
+  !! (rhs is scaled in place: the caller refills it on every apply).
+  !! An unconverged inner solve is still a usable preconditioner application:
+  !! it is counted, not raised.
   subroutine sf_solver_apply(slv, rhs, sol, ierr)
     type(block_solver_t), intent(inout) :: slv
     Vec, intent(in) :: rhs, sol
@@ -304,8 +211,6 @@ contains
     slv%its_sum = slv%its_sum + int(its)
     slv%its_max = max(slv%its_max, int(its))
     slv%nsolve  = slv%nsolve + 1
-    ! an unconverged inner solve is still a usable preconditioner
-    ! application: counted, not raised
     call KSPGetConvergedReason(slv%ksp, reason, ierr)
     if (reason%v < 0) slv%nfail = slv%nfail + 1
   end subroutine sf_solver_apply
@@ -321,8 +226,7 @@ contains
     integer, intent(in) :: my_id
     if (my_id /= 0 .or. slv%nsolve == 0) return
     write(*,'(A,A,A,F7.2,A,I0,A,I0,A)', advance="no") "[Physics PC]   inner ", trim(slv%label), &
-      ": mean ", dble(slv%its_sum) / dble(slv%nsolve), " its, max ", slv%its_max, &
-      " (", slv%nsolve, " solves)"
+      ": mean ", dble(slv%its_sum) / dble(slv%nsolve), " its, max ", slv%its_max, " (", slv%nsolve, " solves)"
     if (slv%nfail > 0) then
       write(*,'(A,I0,A)') ", WARNING ", slv%nfail, " not converged"
     else
@@ -331,7 +235,7 @@ contains
   end subroutine sf_solver_report
 
   !> Between a packed vector p = [h(1) local | h(2) local | ...] and its
-  !! fields: a rank-local copy, no communication.
+  !! fields h(:), rank-local.
   subroutine sf_split_parts(p, h, to_p)
     Vec :: p
     Vec, intent(in) :: h(:)
@@ -369,7 +273,7 @@ contains
 
 #endif
 
-  !> 1 + zeta, as the Jacobian forms it (zeta rescaled for variable dt)
+  !> 1 + zeta as the Jacobian forms it (zeta rescaled for a variable dt).
   real*8 function sf_opz()
     use phys_module, only: time_evol_zeta, tstep, tstep_prev
     sf_opz = 1.0d0 + time_evol_zeta * 2.0d0 * tstep / (tstep + tstep_prev)

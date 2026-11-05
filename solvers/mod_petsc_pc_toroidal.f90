@@ -82,7 +82,7 @@ contains
       PetscCallA(PCFactorSetMatSolverType(subpc, MATSOLVERMUMPS, ierr))
       PetscCallA(KSPSetUp(subksp_array(i), ierr))
       PetscCallA(PCFactorGetMatrix(subpc, F, ierr))
-      PetscCallA(MatMumpsSetIcntl(F, 7,  7,  ierr))   ! fill-reducing ordering (METIS)
+      PetscCallA(MatMumpsSetIcntl(F, 7,  7,  ierr))   ! fill-reducing ordering (automatic)
       PetscCallA(MatMumpsSetIcntl(F, 14, 50, ierr))   ! workspace expansion %
       PetscCallA(MatMumpsSetIcntl(F, 8,  77, ierr))   ! numerical scaling (auto)
       PetscCallA(MatMumpsSetIcntl(F, 22, 1,  ierr))   ! out-of-core processing

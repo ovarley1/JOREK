@@ -1,3 +1,7 @@
+!> Entry point of the physics-based preconditioner (use_physics_pc, the SF
+!! sweep of mod_petsc_pc_sf): jorek2_main assembles W through
+!! petsc_assemble_pc_matrices, mod_petsc registers the PCSHELL and rebuilds
+!! the preconditioner at every PC rebuild.
 module mod_petsc_pc_physics
 #ifdef USE_PETSC
   use mpi_mod
@@ -9,11 +13,6 @@ module mod_petsc_pc_physics
   private
   public :: petsc_setup_physics_pc, petsc_assemble_pc_matrices, &
             petsc_physics_pc_build_reduced
-
-  ! The physics-based preconditioner (use_physics_pc): the split-field (SF)
-  ! block-LDU sweep of mod_petsc_pc_sf. This module is its entry point:
-  ! jorek2_main assembles W (petsc_assemble_pc_matrices), mod_petsc registers
-  ! the PCSHELL and (re)builds the blocks at every PC rebuild.
 
 contains
 

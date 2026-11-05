@@ -1,45 +1,10 @@
 ! =====================================================================
-!  intear_pcbench_gradients
-!  Preconditioner-development benchmark case (docs/physics_pc).
-!
-!  Derived from `intear`.  Purpose: exercise the three "group-psi"
-!  couplings of the reduced PDE operator P_full, which are identically
-!  negligible in `intear` itself and therefore make Milestone 3
-!  (the arrow approximation) untestable there.
-!
-!  All three blocks are weighted by EQUILIBRIUM GRADIENTS:
-!    L_rho_psi ~ (D_par  - D_perp) * grad(rho_0)
-!    L_T_psi   ~ (ZK_par - ZK_perp) * grad(T_0)
-!    U_psi_T   ~ d(eta)/dT * j_0
-!  so the changes relative to `intear` are exactly:
-!    - D_par  0 -> 1        (was structurally zero: block vanished)
-!    - rho profile given a gradient AND an edge barrier
-!      (rho_coef(1) 0 -> -0.4; barrier moved from psi_n=5 to 0.90,
-!       width 1 -> 0.05, i.e. the barrier is now INSIDE the domain)
-!    - T profile: same barrier treatment, T_0 1e-6 -> 1e-4
-!    - eta 1e-6 -> 1e-4     (raises U_psi_T and the resistive part of D_psi)
-!    - D_perp, ZK_perp 1e-7 -> 1e-6
-!
-!  Note on the barrier: in `intear`, T_coef(5)=rho_coef(5)=5.0 places the
-!  tanh pedestal at psi_n = 5, far outside the plasma, so it is inactive
-!  and the profiles are effectively flat (rho exactly flat).  Moving it to
-!  0.90 with width 0.05 turns it on.
-!
-!  Measured effect on the interior block norms ||S_int||_F (843 DOF mesh
-!  below, one MHD solve from equilibrium):
-!
-!    block         intear      this case     factor
-!    U_psi_T       8.3e-06     2.0e+02       2.4e+07
-!    L_rho_psi     3.2e-20     4.2e+02       1.3e+22
-!    L_T_psi       3.7e-04     4.8e-02       1.3e+02
-!
-!  The mesh is deliberately COARSE (11x8 / 9x8, 843 DOFs per variable)
-!  so that the O(N) probing in the Milestone-1 verification harness and
-!  the exact MUMPS solves in the operator comparison stay cheap.  Refine
-!  n_radial/n_pol/n_flux/n_tht for scaling studies.
-!
-!  The physics PC (use_physics_pc) runs on any number of MPI ranks; its
-!  mode split needs at least (n_tor+1)/2.
+!  intear_pcbench_gradients (model199)
+!  intear with the equilibrium gradients that make the psi couplings of the
+!  rho and T equations and the T dependence of eta matter: D_par 0 -> 1,
+!  rho and T pedestals inside the domain (psi_n 0.90, width 0.05), rho
+!  gradient, T_0 1e-4, eta 1e-4, D_perp and ZK_perp 1e-6. The mesh is
+!  deliberately coarse (843 DOFs per variable) for exact reference solves.
 ! =====================================================================
 
 &in1
@@ -143,21 +108,14 @@
  gmres_tol = 1.d-8
 
 ! --- physics PC -------------------------------------------------------
-! Eliminate the Dirichlet DOFs (row+column zeroed, representative diagonal)
-! instead of the 1e12 ZBIG penalty. Strongly preferred for this study: the
-! penalty rows otherwise dominate every operator norm, and -- measured --
-! the ZBIG treatment inflates ||D_psi-(1+zeta)Q|| from 2.8 to 184 by keeping
-! the cold-edge Spitzer eta_T blow-up in the boundary columns.
+! eliminated Dirichlet DOFs instead of the 1e12 penalty, in the system
+! matrix too: keep it the same in runs that are compared
  eliminate_boundary_dofs      = .t.
 
-! use_physics_pc = .t.: the split-field (SF) preconditioner in its production
-! configuration (the physics_pc_sf_* defaults, models/phys_module.f90): all
-! toroidal harmonics coupled. physics_pc_sf_harm_couple = .f. gives the
-! |n|-diagonal blocks on one rank group per |n| family (mode split, needs
-! >= (n_tor+1)/2 MPI ranks; for fewer also set physics_pc_sf_mode_split = .f.)
+! the split-field preconditioner, configured by the physics_pc_sf_* entries
  use_physics_pc               = .t.
 
-! this build has no MUMPS/STRUMPACK bindings; MUMPS is reached via PETSc
+! linear solves through PETSc
  use_strumpack     = .f.
  use_strumpack_eq  = .f.
  use_strumpack_prj = .f.
