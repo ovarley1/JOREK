@@ -319,6 +319,7 @@ subroutine build_element_matrix(element, nodes, xpoint2, xcase2, R_axis,        
 
   use mod_parameters,           only : n_tor, jorek_model, n_vertex_max, n_degrees, unified_element_matrix, n_var
   use phys_module,              only : bc_natural_open, bc_natural_flux, n_tor_fft_thresh, grid_to_wall, n_wall_blocks, keep_n0_const
+  use phys_module,              only : freeze_harmonics, harmonic_frozen
   USE data_structure,           only : type_element, type_node, type_node_list, thread_struct
   use mod_boundary_matrix_open, only : boundary_matrix_open
   use mod_elt_matrix,           only : element_matrix
@@ -494,6 +495,15 @@ subroutine build_element_matrix(element, nodes, xpoint2, xcase2, R_axis,        
 #endif
     do i = 1, i_max, n_tor_local
       thread_struct(omp_tid)%ELM(i, i) = 1.d15
+    enddo
+  endif
+
+  ! --- Linear run by mode family: the same large diagonal entry on every frozen harmonic. The harmonic is the fastest
+  ! --- index of ELM, and the block may start at i_tor_min > 1, so the row is mapped to its global harmonic.
+  if ( freeze_harmonics ) then
+    i_max = n_degrees * n_vertex_max * n_var * n_tor_local
+    do i = 1, i_max
+      if ( harmonic_frozen(i_tor_min + mod(i-1, n_tor_local)) ) thread_struct(omp_tid)%ELM(i, i) = 1.d15
     enddo
   endif
 

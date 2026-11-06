@@ -598,6 +598,8 @@ subroutine preset_parameters
   
   keep_n0_const      = .false.
   linear_run         = .false.
+  linear_family      = 0
+
   
   export_for_nemec   = .false.
   export_aux_node_list = .true.
