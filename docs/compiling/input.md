@@ -120,7 +120,8 @@ render_with_liquid: false
 | **gmres** |  | Use iterative GMRES solver | x | x | x | x | x | x | x | x |
 | **gmres_max_iter** | 200 | Maximum number of GMRES iterations | x | x | x | x | x | x | x | x |
 | **keep_n0_const** | .false. | Perform a linear run where the equilibrium quantities (i_tor=1) do not change with time? |  |  | x | x | x | x | x | x |
-| **linear_run** | .false. | Same as keep_n0_const, to be replaced soon by true linear run where modes are independent |  |  | x | x | x | x | x | x |
+| **linear_run** | .false. | Same as keep_n0_const, to be replaced soon by true linear run where modes are independent. In model 183: linear run by mode family, see linear_family |  |  | x | x | x | x | x | x |
+| **linear_family** | 0 | Model 183 with linear_run: the mode family that evolves, n = +-linear_family (mod n_coord_period), every other harmonic being frozen. With axisymmetric geometry (n_coord_tor=1) only n = linear_family evolves |  |  |  |  |  |  |  |  |
 | **export_for_nemec** | .false. | Export equilibrium information for the NEMEC code? | x | x | x | x | x | x | x | x |
 | **export_aux_node_list** | .true. | Include the aux_node_list for particle projections in the restart files |  |  | x | x | x | x | x | x |
 | **use_murge** | .false. | (Deprecated, Cannot be used any more) | x | x | x | x | x | x | x | x |

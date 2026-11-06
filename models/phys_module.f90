@@ -124,7 +124,10 @@ module phys_module
   logical :: gmres                !< Use iterative GMRES solver
   integer :: gmres_max_iter       !< Maximum number of GMRES iterations
   logical :: keep_n0_const        !< Perform a linear run where the equilibrium quantities (i_tor=1) do not change with time?
-  logical :: linear_run           !< Same as keep_n0_const, to be replaced soon by true linear run where modes are independent
+  logical :: linear_run           !< Same as keep_n0_const, to be replaced soon by true linear run where modes are independent. In model 183: linear run by mode family, see linear_family
+  integer :: linear_family        !< Model 183 with linear_run: the mode family that evolves, n = +-linear_family (mod n_coord_period). Every other harmonic is frozen. With axisymmetric geometry (n_coord_tor=1) only n = linear_family evolves
+  logical :: freeze_harmonics = .false.        !< Linear run by mode family is active. Set at startup on every rank, not an input
+  logical :: harmonic_frozen(n_tor) = .false.  !< Harmonics i_tor held fixed in a linear run by mode family. Set at startup on every rank, not an input
   logical :: use_zkperp_times_density   !< If set to .true., the ZK_perp used in the equations is given by the ZK_perp input form the namelist times the normalized particle density; otherwise ZK_perp from the input namelist is used directly
                                         !< Effectively, user sets chi_perp perp heat diffusivity instead of ZK_perp perp heat conductivitiy
   real*8  :: zkperp_density_floor !< Minumum density to multiply zkperp by if use_zkperp_times_density is used, to avoid division by 0
