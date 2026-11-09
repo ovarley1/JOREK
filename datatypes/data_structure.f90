@@ -137,6 +137,13 @@ end type type_node
      real*8, dimension(:,:,:,:) , allocatable :: delta_g, delta_s, delta_t, delta_p
 
      real*8, dimension(:), allocatable  :: synch_buff
+
+     ! Wall-clock accumulators (s) of this thread, filled by element_matrix_fft and construct_matrix (see the list in
+     ! report_construct_timers). Padded so that two threads never share a cache line.
+     real*8  :: tm_pad1(8) = 0.d0
+     real*8  :: tm(16)     = 0.d0
+     real*8  :: tm_pad2(8) = 0.d0
+     integer :: tm_n       = 0              !< number of elements built by this thread
   END TYPE type_thread_buffer
 
   !> One shard of a shattered pellet (or the complete pellet if unshattered)
@@ -346,6 +353,8 @@ contains
           thread_struct(i)%ELM     = 0.d0
           thread_struct(i)%RHS     = 0.d0
           thread_struct(i)%synch_buff     = 0.d0
+          thread_struct(i)%tm      = 0.d0
+          thread_struct(i)%tm_n    = 0
           call tr_allocate(thread_struct(i)%eq_g   ,1,n_plane,1,n_var,1,n_gauss,1,n_gauss,"eq_g",CAT_MATELEM)
           call tr_allocate(thread_struct(i)%eq_s   ,1,n_plane,1,n_var,1,n_gauss,1,n_gauss,"eq_s",CAT_MATELEM)
           call tr_allocate(thread_struct(i)%eq_t   ,1,n_plane,1,n_var,1,n_gauss,1,n_gauss,"eq_t",CAT_MATELEM)

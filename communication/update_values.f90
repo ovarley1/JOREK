@@ -8,6 +8,7 @@ use phys_module, only: keep_n0_const, treat_axis, freeze_harmonics, harmonic_fro
 use mod_parameters, only: n_tor, n_var, n_degrees, n_vertex_max
 use mod_basisfunctions
 use mod_axis_treatment
+use mod_linear_compact, only: compact_on, n_act, harm_slot
 use mpi_mod
 
 implicit none
@@ -27,7 +28,7 @@ integer, dimension(n_vertex_max)  :: Pr
 integer, dimension(2)    :: parent
 integer :: index_elm,l,i_tor,ivar
 integer :: i, j, k, in, index_node, index, i_tor_min
-integer :: id
+integer :: id, n_blk, islot
 real*8  :: stored_dofs(1:n_degrees*n_var*n_tor), new_dofs(1:4), old_dofs(1:4)
 real*8  :: max_frozen, max_evolving
 integer :: my_id, ierr
@@ -35,10 +36,37 @@ integer :: my_id, ierr
 i_tor_min = 1
 if ( keep_n0_const ) i_tor_min = 2 ! Keep equilibrium unchanged during the run
 
+! --- linear_compact: the vector holds the active harmonics only, in blocks of n_act (harm_slot gives the position, 0 if frozen)
+n_blk = n_tor
+if ( compact_on ) n_blk = n_act
+
+! --- Linear run with linear_compact: the frozen harmonics are not in the vector, so there is nothing to drop and no frozen
+! --- increment to print. Their deltas are set to zero in the update below. Print the evolving maximum, which is comparable to
+! --- the second number of the line printed without linear_compact.
+if ( freeze_harmonics .and. compact_on ) then
+  max_evolving = 0.d0
+  do i = 1, node_list%n_nodes
+    if ( node_list%node(i)%constrained ) cycle
+    do j = 1, n_degrees
+      index_node = node_list%node(i)%index(j)
+      do k = 1, n_var
+        do in = 1, n_tor
+          if ( harm_slot(in) == 0 ) cycle
+          index = n_act*n_var * (index_node - 1) + n_act*(k-1) + harm_slot(in)
+          if ( index .le. 0 ) cycle
+          max_evolving = max(max_evolving, abs(rhs_vec%val(index)))
+        enddo
+      enddo
+    enddo
+  enddo
+  call MPI_COMM_RANK(MPI_COMM_WORLD, my_id, ierr)
+  if ( my_id == 0 ) write(*,'(A,ES12.4)') ' linear_compact: frozen harmonics are not in the system. max |increment| evolving =', max_evolving
+endif
+
 ! --- Linear run by mode family: drop the increments of the frozen harmonics, so that their values stay exactly unchanged
 ! --- and zero is stored in deltas. The 1.d15 in the matrix keeps them near zero inside the solve, and this step would
 ! --- hide a failure of that, so print them: they should be about 1e-15 of what the same harmonics do in an unfrozen run.
-if ( freeze_harmonics ) then
+if ( freeze_harmonics .and. (.not. compact_on) ) then
   max_frozen   = 0.d0
   max_evolving = 0.d0
   do i = 1, node_list%n_nodes
@@ -73,9 +101,12 @@ do i = 1, node_list%n_nodes
     if(treat_axis .and. node_list%node(i)%axis_node)then
       do k=1,n_var
         do in=1,n_tor
+          islot = in
+          if ( compact_on ) islot = harm_slot(in)
+          if ( islot == 0 ) cycle ! linear_compact: frozen harmonic, not in the vector
           do j=1,n_degrees
              index_node = node_list%node(i)%index(j)
-             index = n_tor*n_var * (index_node - 1) + n_tor*(k-1) + in
+             index = n_blk*n_var * (index_node - 1) + n_blk*(k-1) + islot
              new_dofs(j) = rhs_vec%val(index)
              id = n_degrees*(n_tor)*(k-1) + n_degrees*(in-1) + j
              stored_dofs(id) = rhs_vec%val(index)
@@ -83,7 +114,7 @@ do i = 1, node_list%n_nodes
           call new_to_old_dofs_on_the_axis(node_list, i, new_dofs, old_dofs)
           do j=1,n_degrees
              index_node = node_list%node(i)%index(j)
-             index = n_tor*n_var * (index_node - 1) + n_tor*(k-1) + in
+             index = n_blk*n_var * (index_node - 1) + n_blk*(k-1) + islot
              rhs_vec%val(index) = old_dofs(j)
           enddo
         enddo
@@ -118,7 +149,13 @@ do i = 1, node_list%n_nodes
 #else
       do k=1,n_var
         do in=i_tor_min,n_tor
-          index = n_tor*n_var * (index_node - 1) + n_tor*(k-1) + in
+          islot = in
+          if ( compact_on ) islot = harm_slot(in)
+          if ( islot == 0 ) then ! linear_compact: frozen harmonic, the value stays and its increment is zero
+            node_list%node(i)%deltas(in,j,k) = 0.d0
+            cycle
+          endif
+          index = n_blk*n_var * (index_node - 1) + n_blk*(k-1) + islot
           if (index .gt. 0) then
             node_list%node(i)%values(in,j,k) = node_list%node(i)%values(in,j,k) + rhs_vec%val(index)
             node_list%node(i)%deltas(in,j,k) = rhs_vec%val(index)
@@ -132,9 +169,12 @@ do i = 1, node_list%n_nodes
     if(treat_axis .and. node_list%node(i)%axis_node)then
       do k=1,n_var
         do in=i_tor_min,n_tor
+          islot = in
+          if ( compact_on ) islot = harm_slot(in)
+          if ( islot == 0 ) cycle ! linear_compact: frozen harmonic, not in the vector
           do j=1,n_degrees
             index_node = node_list%node(i)%index(j)
-            index = n_tor*n_var * (index_node - 1) + n_tor*(k-1) + in
+            index = n_blk*n_var * (index_node - 1) + n_blk*(k-1) + islot
             id = n_degrees*(n_tor)*(k-1) + n_degrees*(in-1) + j
             rhs_vec%val(index) = stored_dofs(id)
           enddo

@@ -126,8 +126,13 @@ module phys_module
   logical :: keep_n0_const        !< Perform a linear run where the equilibrium quantities (i_tor=1) do not change with time?
   logical :: linear_run           !< Same as keep_n0_const, to be replaced soon by true linear run where modes are independent. In model 183: linear run by mode family, see linear_family
   integer :: linear_family        !< Model 183 with linear_run: the mode family that evolves, n = +-linear_family (mod n_coord_period). Every other harmonic is frozen. With axisymmetric geometry (n_coord_tor=1) only n = linear_family evolves
+  logical :: linear_pc_evolving   !< Model 183 with linear_run and gmres: the preconditioner families are built from the evolving harmonics only (one cos/sin pair each), overriding any manual families. The frozen harmonics get no preconditioner rows
+  logical :: linear_compact      !< Model 183 with gmres: the global matrix, vectors and preconditioner hold the evolving harmonics only (see mod_linear_compact). Without linear_run it uses every harmonic: a smoke test of the code path. Needs linear_pc_evolving with linear_run. Not supported with free boundary, keep_n0_const, Newton, JECCD, USE_DIRECT_CONSTRUCTION, USE_BICGSTAB
+  logical :: linear_skip_frozen  !< Model 183 with linear_run, linear_pc_evolving and gmres: the FFT element matrix leaves out the rows and columns of the frozen harmonics (they never reach the GMRES iterates). Ignored with a warning if those conditions do not hold
+  logical :: linear_check_sums   !< Debug, model 183: print the sums of |entry| of the matrix (evolving rows and columns) and of the RHS (evolving rows) after every construction of the global matrix, to compare two builds
   logical :: freeze_harmonics = .false.        !< Linear run by mode family is active. Set at startup on every rank, not an input
   logical :: harmonic_frozen(n_tor) = .false.  !< Harmonics i_tor held fixed in a linear run by mode family. Set at startup on every rank, not an input
+  logical :: skip_frozen_pairs = .false.       !< The FFT element matrix leaves out the cos/sin pairs of frozen harmonics (rows and columns). Set by construct_matrix at every call from linear_skip_frozen, not an input
   logical :: use_zkperp_times_density   !< If set to .true., the ZK_perp used in the equations is given by the ZK_perp input form the namelist times the normalized particle density; otherwise ZK_perp from the input namelist is used directly
                                         !< Effectively, user sets chi_perp perp heat diffusivity instead of ZK_perp perp heat conductivitiy
   real*8  :: zkperp_density_floor !< Minumum density to multiply zkperp by if use_zkperp_times_density is used, to avoid division by 0

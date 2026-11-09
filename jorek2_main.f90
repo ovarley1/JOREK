@@ -39,6 +39,7 @@ program JOREK2
   use mod_bootstrap_functions
   use construct_matrix_mod, only : construct_matrix
   use mod_global_matrix_structure
+  use mod_linear_compact, only: setup_linear_compact, zero_frozen_deltas, compact_on
   use mod_import_restart
   use mod_export_restart
 #ifdef USE_NO_TREE
@@ -610,6 +611,9 @@ write(*,*) "n elements:", element_list%n_elements
     call distribute_nodes_elements(id_elements, n_mpi, index_size, mhd_sim%node_list, mhd_sim%element_list, .false., mhd_sim%local_elms, & 
                                    mhd_sim%n_local_elms, restart, freeboundary, a_mat)    
     
+    ! --- linear_compact: check that the run supports it and build the slot map of the global system (the block size of a_mat)
+    call setup_linear_compact(my_id)
+
     call global_matrix_structure(mhd_sim%node_list, mhd_sim%element_list, mhd_sim%bnd_elm_list, freeboundary,&
                                  mhd_sim%local_elms, mhd_sim%n_local_elms, a_mat, i_tor_min=1, i_tor_max=n_tor)
 
@@ -652,6 +656,10 @@ write(*,*) "n elements:", element_list%n_elements
   !***********************************************************************
   !***********************************************************************
   
+  ! --- linear_compact: the frozen harmonics are not in the solution vector, so their increments (stale after a restart) are
+  ! --- zeroed here, and by update_values at every step. The element matrix sums them in the time derivative terms.
+  if ((nstep > 0) .and. compact_on) call zero_frozen_deltas(mhd_sim%node_list)
+
   if (nstep > 0) call update_deltas(mhd_sim%node_list, deltas) ! create list of delta values in local_matrix module
 
   call solver%setup() ! set sparse solver parameters

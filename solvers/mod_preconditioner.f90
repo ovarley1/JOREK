@@ -9,7 +9,9 @@ module mod_preconditioner
 !! call subroutines for setting mode families, creating communicators, distributing tasks
   subroutine initialize_preconditioner(pc,comm_glob)
     use phys_module, only: autodistribute_modes, n_mode_families, autodistribute_ranks, centralize_harm_mat
+    use phys_module, only: freeze_harmonics, linear_pc_evolving
     use mod_parameters, only: n_tor
+    use mod_linear_compact, only: n_act
     use data_structure, only: type_PRECOND
     use mpi_mod
     implicit none
@@ -33,10 +35,19 @@ module mod_preconditioner
     !pc%mat%row_distributed  = .not.centralize_harm_mat
 
     if (pc%autodistribute_modes) then
-      pc%n_mode_families = (n_tor + 1)/2
+      pc%n_mode_families = (n_act + 1)/2 ! n_act is n_tor, or the number of active harmonics with linear_compact
     else
       pc%n_mode_families = n_mode_families
     endif
+
+    ! --- Linear run by mode family: the families come from the evolving harmonics only, frozen ones get no PC rows
+#ifndef DIRECT_CONSTRUCTION
+    if (freeze_harmonics .and. linear_pc_evolving) call set_evolving_families(pc)
+#else
+    if (freeze_harmonics .and. linear_pc_evolving .and. (my_id.eq.0)) then
+      write(*,*) "linear_pc_evolving is not supported with USE_DIRECT_CONSTRUCTION=1: ignored"
+    endif
+#endif
 
     call distribute_ranks(n_mpi, pc)
 
@@ -61,6 +72,85 @@ module mod_preconditioner
     return
 
   end subroutine initialize_preconditioner
+
+#ifndef DIRECT_CONSTRUCTION
+!> Linear run by mode family: one PC family per evolving cos/sin pair (i_tor = 2k, 2k+1, same n) and none for the frozen
+!! harmonics. A harmonic in no family has no PC rows, so GMRES keeps it at exactly 0 (see gather_solution and prec in
+!! mod_gmres2) and the PC is built and factorised for the evolving harmonics only. Sets the family arrays that
+!! distribute_modes reads, and pc%n_mode_families as a local count (the input n_mode_families is left alone).
+!! Runs on every rank, from harmonic_frozen and n_tor, which are identical on every rank (set by setup_linear_family).
+!! With manual ranks, ranks_per_family(1:nf) must sum to the number of MPI ranks.
+  subroutine set_evolving_families(pc)
+    use phys_module, only: n_fam_max, harmonic_frozen, autodistribute_modes, autodistribute_ranks, ranks_per_family
+    use phys_module, only: modes_per_family, mode_families_modes, weights_per_family
+    use mod_parameters, only: n_tor
+    use mod_linear_compact, only: harm_slot
+    use data_structure, only: type_PRECOND
+    use mpi_mod
+    implicit none
+
+    type(type_PRECOND) :: pc
+    integer            :: k, nf, ierr
+
+    ! --- Count the evolving pairs. n_tor is odd (n=0, then a cos/sin pair per n) and i_tor=1 (n=0) is always frozen.
+    nf = 0
+    do k = 1, (n_tor - 1)/2
+      if (harmonic_frozen(2*k) .neqv. harmonic_frozen(2*k + 1)) then
+        if (pc%my_id.eq.0) write(*,*) "FATAL: linear_pc_evolving: the cos/sin pair of harmonics is split by the freeze:", 2*k
+        call MPI_Abort(MPI_COMM_WORLD, 6, ierr)
+        stop
+      endif
+      if (.not. harmonic_frozen(2*k)) nf = nf + 1
+    enddo
+
+    if ((nf < 1) .or. (nf > n_fam_max)) then
+      if (pc%my_id.eq.0) write(*,*) "FATAL: linear_pc_evolving: number of evolving families out of range:", nf, n_fam_max
+      call MPI_Abort(MPI_COMM_WORLD, 6, ierr)
+      stop
+    endif
+
+    ! --- Every family needs at least one rank. distribute_ranks would exit with status 0 on a manual mismatch
+    if (pc%n_mpi < nf) then
+      if (pc%my_id.eq.0) then
+        write(*,*) "FATAL: linear_pc_evolving needs at least one MPI rank per family. Families, ranks:", nf, pc%n_mpi
+      endif
+      call MPI_Abort(MPI_COMM_WORLD, 6, ierr)
+      stop
+    endif
+    if (.not. autodistribute_ranks) then
+      if ((minval(ranks_per_family(1:nf)) < 1) .or. (sum(ranks_per_family(1:nf)) /= pc%n_mpi)) then
+        if (pc%my_id.eq.0) then
+          write(*,*) "FATAL: linear_pc_evolving with autodistribute_ranks=.f. needs ranks_per_family(1:nf) >= 1, summing to"
+          write(*,*) "       the number of MPI ranks. Families, ranks, ranks_per_family:", nf, pc%n_mpi, ranks_per_family(1:nf)
+        endif
+        call MPI_Abort(MPI_COMM_WORLD, 6, ierr)
+        stop
+      endif
+    endif
+
+    ! --- Overwrite what the deck set: one family per evolving n, modes (2k, 2k+1), weight 1 (no overlap between families).
+    ! --- The modes are the positions of the harmonics in the blocks of the global matrix: harm_slot is the identity, except with
+    ! --- linear_compact where the frozen harmonics have no position and the evolving pair j sits in slots (2j-1, 2j).
+    nf = 0
+    do k = 1, (n_tor - 1)/2
+      if (harmonic_frozen(2*k)) cycle
+      nf = nf + 1
+      modes_per_family(nf)        = 2
+      mode_families_modes(nf,1:2) = (/ harm_slot(2*k), harm_slot(2*k + 1) /)
+      weights_per_family(nf)      = 1.d0
+    enddo
+
+    if (pc%my_id.eq.0) then
+      if (.not. autodistribute_modes) write(*,*) "linear_pc_evolving: the manual mode families of the deck are overridden"
+      write(*,'(A,I0,A,I0,A)') " linear_pc_evolving: ", nf, " PC families, one per evolving n; the ", count(harmonic_frozen), &
+                               " frozen harmonics get no PC rows"
+    endif
+
+    pc%autodistribute_modes = .false.
+    pc%n_mode_families      = nf
+
+  end subroutine set_evolving_families
+#endif
 
 !> Set up MPI communicators for mode families and corresponding masters
   subroutine create_communicators(pc)

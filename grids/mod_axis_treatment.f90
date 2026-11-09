@@ -335,6 +335,7 @@ subroutine penalize_dof_on_axis(node_list, dof, element_list, local_elms, n_loca
   use mod_assembly, only : boundary_conditions_add_one_entry, boundary_conditions_add_RHS
   use data_structure
   use mod_locate_irn_jcn
+  use mod_linear_compact, only: compact_on, n_act, harm_slot
 
   implicit none
 
@@ -350,10 +351,11 @@ subroutine penalize_dof_on_axis(node_list, dof, element_list, local_elms, n_loca
   real*8  :: zbig
   integer :: i, in, iv, inode, k
   integer :: index_large_i, index_node, index_node2, ielm
-  integer :: ilarge2, n_tor_local
+  integer :: ilarge2, n_tor_local, islot
   integer(kind=int_all):: ijA_position,ijA_position2
 
   n_tor_local = (a_mat%i_tor_max - a_mat%i_tor_min + 1)
+  if (compact_on) n_tor_local = n_act ! linear_compact: the blocks of the system hold the active harmonics only
 
   zbig = 1.d12
   do i=1, n_local_elms
@@ -367,16 +369,19 @@ subroutine penalize_dof_on_axis(node_list, dof, element_list, local_elms, n_loca
       if (node_list%node(inode)%axis_node) then
 
         do in=a_mat%i_tor_min, a_mat%i_tor_max
+          islot = in - a_mat%i_tor_min + 1 ! position of the harmonic in the block of the system
+          if (compact_on) islot = harm_slot(in)
+          if (islot == 0) cycle            ! linear_compact: a frozen harmonic has no row
           do k=1, n_var
 
             index_node = node_list%node(inode)%index(dof)
             if ((index_node .ge. index_min) .and. (index_node .le. index_max)) then
               call locate_irn_jcn(index_node,index_node,index_min,index_max,ijA_position,a_mat)
               index_large_i = n_tor_local * n_var * (index_node - 1)
-              ilarge2 = ijA_position - 1 + ((k-1)*n_tor_local + in-a_mat%i_tor_min) * n_var*n_tor_local &
-                + (k-1)*n_tor_local + in - a_mat%i_tor_min + 1
-              a_mat%irn(ilarge2) =  n_tor_local * n_var * (index_node-1) + (k-1)*n_tor_local + in - a_mat%i_tor_min + 1
-              a_mat%jcn(ilarge2) =  n_tor_local * n_var * (index_node-1) + (k-1)*n_tor_local + in - a_mat%i_tor_min + 1
+              ilarge2 = ijA_position - 1 + ((k-1)*n_tor_local + islot - 1) * n_var*n_tor_local &
+                + (k-1)*n_tor_local + islot
+              a_mat%irn(ilarge2) =  n_tor_local * n_var * (index_node-1) + (k-1)*n_tor_local + islot
+              a_mat%jcn(ilarge2) =  n_tor_local * n_var * (index_node-1) + (k-1)*n_tor_local + islot
               a_mat%val(ilarge2)   = zbig
             end if
 

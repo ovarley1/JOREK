@@ -669,6 +669,10 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
   write(*,LOGI_FMT) 'current_prof_initialized', current_prof_initialized
   write(*,LOGI_FMT) 'linear_run            ', linear_run
   write(*,INTG_FMT) 'linear_family         ', linear_family
+  write(*,LOGI_FMT) 'linear_pc_evolving    ', linear_pc_evolving
+  write(*,LOGI_FMT) 'linear_compact        ', linear_compact
+  write(*,LOGI_FMT) 'linear_skip_frozen    ', linear_skip_frozen
+  write(*,LOGI_FMT) 'linear_check_sums     ', linear_check_sums
   write(*,REAL_FMT) 'D_prof_neg            ', D_prof_neg
   write(*,REAL_FMT) 'D_prof_neg_thresh     ', D_prof_neg_thresh
   write(*,REAL_FMT) 'D_prof_imp_neg_thresh ', D_prof_imp_neg_thresh
