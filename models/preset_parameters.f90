@@ -599,6 +599,10 @@ subroutine preset_parameters
   keep_n0_const      = .false.
   linear_run         = .false.
   linear_family      = 0
+  linear_pc_evolving = .true.
+  linear_compact     = .false.
+  linear_skip_frozen = .false.
+  linear_check_sums  = .false.
 
   
   export_for_nemec   = .false.

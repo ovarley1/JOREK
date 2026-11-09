@@ -24,6 +24,7 @@ contains
   subroutine update_pc_mat(pc, a_mat, sim)
 
     use mod_parameters, only : n_tor, n_var
+    use mod_linear_compact, only : n_act
     use mpi_mod
     use mod_integer_types
     use data_structure, only: type_SP_MATRIX, type_PRECOND, type_RHS
@@ -47,6 +48,7 @@ contains
     integer(kind=int_all), allocatable :: indx(:)
 
     logical                            :: distribute_row, distribute_col
+    logical                            :: used(n_tor)
 
     integer :: cc, cr
     real t0, t1
@@ -62,8 +64,9 @@ contains
 
     call system_clock(count=cc, count_rate=cr); t0 =  real(cc)/cr
 
-! --- Copy of n_tor as long-integer for modulo functions (just to keep safe)
-    n_tor_int = n_tor
+! --- Copy of the number of harmonics per block of the global matrix as long-integer for modulo functions (just to keep safe).
+! --- n_act is n_tor, or the number of active harmonics with linear_compact (indices are then in slots, families too)
+    n_tor_int = n_act
 
     distribute_row = pc%mat%row_distributed.and.(.not.pc%mat%col_distributed)
     distribute_col = pc%mat%col_distributed.and.(.not.pc%mat%row_distributed)
@@ -76,6 +79,9 @@ contains
     if (.not.associated(pc%mat%val)) allocate(pc%mat%val(pc%mat%nnz))
     if (.not.associated(pc%mat%irn)) allocate(pc%mat%irn(pc%mat%nnz))
     if (.not.associated(pc%mat%jcn)) allocate(pc%mat%jcn(pc%mat%nnz))
+
+! --- Harmonics in at least one family: entries of the others are skipped in the manual family loop
+    call set_used_harmonics(pc, used)
 
 ! --- Loop over communication splits
     do isplit = 1, pc%nsplit
@@ -122,6 +128,7 @@ contains
         do i = pc%istart(isplit), pc%ifinish(isplit)
           n_i = mod(a_mat%irn(i)-Int1,n_tor_int) + 1
           n_j = mod(a_mat%jcn(i)-Int1,n_tor_int) + 1
+          if (.not.(used(n_i).and.used(n_j))) cycle ! the row or column harmonic is in no family: no family takes the entry
 
           do j = 1, pc%n_mode_families
             nm = pc%modes_per_family(j) ! number of modes per j-th family
@@ -219,6 +226,7 @@ contains
     use mpi_mod
     use mod_integer_types
     use mod_parameters, only : n_tor, n_var
+    use mod_linear_compact, only : n_act
     use data_structure, only: type_SP_MATRIX, type_PRECOND    
     
     implicit none
@@ -236,7 +244,7 @@ contains
     
     if (pc%my_id.eq.0) write(*,*) "Analyzing preconditioner"
     
-    pc%mat%ng = (pc%mode_set_n)*(a_mat%ng)/n_tor ! rank of local PC matrix
+    pc%mat%ng = (pc%mode_set_n)*(a_mat%ng)/n_act ! rank of local PC matrix (n_act harmonics per block of the global matrix)
     pc%mat%nr = pc%mat%ng
     pc%mat%nc = pc%mat%ng
     pc%n_glob = a_mat%ng
@@ -258,7 +266,7 @@ contains
     nnz = a_mat%nnz
     call MPI_Allreduce(nnz,nzg,1,MPI_INTEGER8,MPI_SUM,a_mat%comm,ierr)
     nm = sum(pc%modes_per_family(1:pc%n_mode_families)) ! number of modes in all families (can be larger than n_tor)
-    nzg = (nzg/n_tor**2)*nm**2                          ! number of elements in all families (can be larger than global nnz)
+    nzg = (nzg/n_act**2)*nm**2                          ! number of elements in all families (can be larger than global nnz)
     pc%nsplit = nzg/INT_MAX + 1
 
     if ((pc%my_id.eq.0).and.(pc%nsplit>1)) write(*,*) "Using split communication for preconditioner construction", pc%nsplit
@@ -266,7 +274,7 @@ contains
     allocate(pc%istart(pc%nsplit),pc%ifinish(pc%nsplit))
 
     ! split global nz keeping it integer of (n_var*n_tor)**2
-    block_size2 = (n_var*n_tor)**2
+    block_size2 = (n_var*n_act)**2
     nz_split = ((a_mat%nnz/block_size2)/pc%nsplit)*block_size2
 
     ! distribute indices for split communication
@@ -345,9 +353,9 @@ contains
 
     allocate(pc%row_index(pc%rhs%n))
     
-    do ind = 0, a_mat%ng/n_tor - 1
+    do ind = 0, a_mat%ng/n_act - 1
       do i = 1, pc%mode_set_n
-        pc%row_index(i + ind*pc%mode_set_n) =  pc%mode_set(i) + ind*n_tor
+        pc%row_index(i + ind*pc%mode_set_n) =  pc%mode_set(i) + ind*n_act
       enddo
     enddo
     
@@ -358,12 +366,36 @@ contains
   
   end subroutine set_pc_structure
 
+  !> Harmonics (i_tor) that belong to at least one PC family. An entry whose row or column harmonic is not among them
+  !! reaches no family, so the per-entry family test can skip it. A manual list may leave harmonics out (linear runs).
+  subroutine set_used_harmonics(pc, used)
+
+    use mod_parameters, only : n_tor
+    use data_structure, only: type_PRECOND
+
+    implicit none
+
+    type(type_PRECOND)                 :: pc
+    logical, intent(out)               :: used(n_tor)
+    integer                            :: j, k, kmode
+
+    used(1:n_tor) = .false.
+    do j = 1, pc%n_mode_families
+      do k = 1, pc%modes_per_family(j)
+        kmode = pc%mode_families_modes(j,k)
+        if ((kmode.ge.1).and.(kmode.le.n_tor)) used(kmode) = .true.
+      enddo
+    enddo
+
+  end subroutine set_used_harmonics
+
   !> Calculate send-recv counts
   subroutine get_send_recv(i0,i1,long_send_counts,long_recv_counts,pc,a_mat)
 
     use mpi_mod
     use mod_integer_types
     use mod_parameters, only : n_tor, n_var
+    use mod_linear_compact, only : n_act
     use data_structure, only: type_SP_MATRIX, type_PRECOND, type_RHS    
     
     implicit none
@@ -377,12 +409,16 @@ contains
     integer(kind=int_all)                             :: i, n_tor_int
     integer                                           :: j, ji, nm, nr, k, kmode, l, lmode, n_i, n_j, ierr
     logical                                           :: distribute_row, distribute_col
+    logical                                           :: used(n_tor)
 
 
     distribute_row = pc%mat%row_distributed.and.(.not.pc%mat%col_distributed)
     distribute_col = pc%mat%col_distributed.and.(.not.pc%mat%row_distributed)
 
-    n_tor_int = n_tor
+    n_tor_int = n_act ! n_tor, or the number of active harmonics with linear_compact
+
+! --- Harmonics in at least one family: entries of the others are skipped in the manual family loop
+    call set_used_harmonics(pc, used)
 
     long_send_counts(1:pc%n_cpu) = 0 ! number of elements to be sent from current rank to others
 
@@ -412,6 +448,7 @@ contains
       do i=i0, i1
         n_i = mod(a_mat%irn(i)-Int1,n_tor_int) + 1
         n_j = mod(a_mat%jcn(i)-Int1,n_tor_int) + 1
+        if (.not.(used(n_i).and.used(n_j))) cycle ! the row or column harmonic is in no family: no family takes the entry
 
         do j = 1, pc%n_mode_families
           nm = pc%modes_per_family(j) ! number of modes per j-th family

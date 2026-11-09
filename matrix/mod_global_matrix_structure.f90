@@ -11,6 +11,7 @@ subroutine global_matrix_structure(node_list, element_list, boundary_list, freeb
   use mod_ch_node_struct
   use vacuum, only: sr
   use mod_integer_types
+  use mod_linear_compact, only : compact_on, n_act
   use mpi_mod
 
   implicit none
@@ -48,6 +49,8 @@ subroutine global_matrix_structure(node_list, element_list, boundary_list, freeb
   n_tor_local = i_tor_max - i_tor_min + 1
   
   a_mat%block_size = n_tor_local*n_var
+  ! --- linear_compact: the blocks of the global system hold the active harmonics only (a_mat%i_tor_min/max stay 1..n_tor)
+  if ( compact_on .and. (i_tor_min == 1) .and. (i_tor_max == n_tor) ) a_mat%block_size = n_act*n_var
   
   a_mat%i_tor_min = i_tor_min
   a_mat%i_tor_max = i_tor_max

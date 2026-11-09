@@ -23,6 +23,7 @@ use mod_semianalytical
 use mod_equations
 use mod_chi
 use mod_sources
+!$ use omp_lib
 
 implicit none
  
@@ -62,6 +63,8 @@ real*8     :: T0_e, T0_e_s, T0_e_ss
 real*8     :: BigR_x, vv2, eta_T, visco_T, deta_dT, d2eta_d2T, dvisco_dT
 real*8     :: theta, zeta, reta
 logical    :: xpoint2, use_fft
+real*8     :: tl(9), tq0, tq1     !< wall-clock timers (s) of this call, added to thread_struct(tid)%tm at the end
+logical    :: pair_skip((n_tor+1)/2)   !< cos/sin pair k of harmonics is frozen and left out of the FFT assembly (skip_frozen_pairs)
 
 real*8     :: T0_i_corr, T0_e_corr                      !> temperature for T^(-1.5)
 real*8     :: T0_e_corr_eV, dT0_e_corr_eV_dT            !> corrected T0_e in eV and derivative
@@ -109,11 +112,14 @@ real*8, dimension(4), parameter  :: vr = (/1.,0.,1.,0./), vp = (/0.,1.,0.,1./), 
 
 eq => thread_eq(tid)%eq
 
+tl = 0.d0; tq0 = 0.d0; tq1 = 0.d0
+!$ tq0 = omp_get_wtime()
 ELM_p = 0.d0; ELM_n = 0.d0; ELM_k = 0.d0; ELM_kn = 0.d0
 RHS_p = 0.d0; RHS_k = 0.d0
 ELM   = 0.d0; RHS   = 0.d0
 rhs_ij  = 0.d0
 amat_ij = 0.d0
+!$ tl(1) = omp_get_wtime() - tq0
 
 ! --- Take time evolution parameters from phys_module
 theta = time_evol_theta
@@ -140,7 +146,17 @@ end if
 
 n_tor_local = n_tor_end - n_tor_start + 1
 
+! --- Linear run by mode family (GMRES, PC from the evolving harmonics): the frozen harmonics never reach the iterates, so the rows
+! --- and columns of their cos/sin pairs are left out of the harmonic assembly. Pair k holds harmonics max(2*(k-1),1) and +1.
+pair_skip = .false.
+if (use_fft .and. skip_frozen_pairs) then
+  do k = 1, (n_tor+1)/2
+    pair_skip(k) = harmonic_frozen(max(2*(k-1),1))
+  end do
+end if
+
 !---------------------------------------------------- value of (x,y) and derivatives on Gaussian points
+!$ tq0 = omp_get_wtime()
 x_g  = 0.d0; x_s   = 0.d0; x_t   = 0.d0; x_p = 0.d0; x_st  = 0.d0; x_ss  = 0.d0; x_tt  = 0.d0; x_sp = 0.d0; x_tp = 0.d0; x_pp = 0.d0;
 y_g  = 0.d0; y_s   = 0.d0; y_t   = 0.d0; y_p = 0.d0; y_st  = 0.d0; y_ss  = 0.d0; y_tt  = 0.d0; y_sp = 0.d0; y_tp = 0.d0; y_pp = 0.d0;
 eq_g = 0.d0; eq_s  = 0.d0; eq_t  = 0.d0; eq_st = 0.d0; eq_ss = 0.d0; eq_tt = 0.d0;
@@ -245,8 +261,10 @@ end if
 delta_g = delta_g*tstep/tstep_prev
 delta_s = delta_s*tstep/tstep_prev
 delta_t = delta_t*tstep/tstep_prev
+!$ tl(2) = omp_get_wtime() - tq0
 
 !--------------------------------------------------- sum over the Gaussian integration points
+!$ tq0 = omp_get_wtime()
 do ms=1, n_gauss
   do mt=1, n_gauss
     wst = wgauss(ms)*wgauss(mt)
@@ -727,23 +745,29 @@ do ms=1, n_gauss
     end do ! mp loop (n_plane)
   end do ! ms loop
 end do ! mt loop
+!$ tl(3) = omp_get_wtime() - tq0
 
 
 if (use_fft) then
+!$ tq0 = omp_get_wtime()
   do i=1,n_vertex_max*n_var*(n_order+1)
     do j=1, n_vertex_max*n_var*(n_order+1)
       in_fft =  ELM_p(1:n_plane,i,j)
 
+!$    tq1 = omp_get_wtime()
 #ifdef USE_FFTW
       call dfftw_execute_dft_r2c(fftw_plan, in_fft, out_fft)
 #else
       call my_fft(in_fft, out_fft, n_plane)
 #endif
-    
+!$    tl(4) = tl(4) + omp_get_wtime() - tq1
+
       do k=1,(n_tor+1)/2
+        if (pair_skip(k)) cycle
         index_k = n_tor*(i-1) + max(2*(k-1),1)
 
         do m=1,(n_tor+1)/2
+          if (pair_skip(m)) cycle
           index_m = n_tor*(j-1) + max(2*(m-1),1)
           l = (k-1) + (m-1)
 
@@ -776,22 +800,28 @@ if (use_fft) then
       end do
     end do
   end do
+!$ tl(5) = omp_get_wtime() - tq0
 
+!$ tq0 = omp_get_wtime()
   do i=1,n_vertex_max*n_var*(n_order+1)
     do j=1, n_vertex_max*n_var*(n_order+1)
       if (maxval(abs(ELM_n(1:n_plane,i,j))) .ne. 0.d0) then
         in_fft =  ELM_n(1:n_plane,i,j)
 
+!$      tq1 = omp_get_wtime()
 #ifdef USE_FFTW
         call dfftw_execute_dft_r2c(fftw_plan, in_fft, out_fft)
 #else
         call my_fft(in_fft, out_fft, n_plane)
 #endif
+!$      tl(4) = tl(4) + omp_get_wtime() - tq1
 
         do k=1,(n_tor+1)/2
+          if (pair_skip(k)) cycle
           index_k = n_tor*(i-1) + max(2*(k-1),1)
 
           do m=1,(n_tor+1)/2
+            if (pair_skip(m)) cycle
             im = max(2*(m-1),1)
             index_m = n_tor*(j-1) + max(2*(m-1),1)
             l = (k-1) + (m-1)
@@ -826,23 +856,29 @@ if (use_fft) then
       end if
     end do
   end do
+!$ tl(6) = omp_get_wtime() - tq0
 
+!$ tq0 = omp_get_wtime()
   do i=1,n_vertex_max*n_var*(n_order+1)
     do j=1, n_vertex_max*n_var*(n_order+1)
       if (maxval(abs(ELM_k(1:n_plane,i,j))) .ne. 0.d0) then
         in_fft =  ELM_k(1:n_plane,i,j)
 
+!$      tq1 = omp_get_wtime()
 #ifdef USE_FFTW
         call dfftw_execute_dft_r2c(fftw_plan, in_fft, out_fft)
 #else
         call my_fft(in_fft, out_fft, n_plane)
 #endif
+!$      tl(4) = tl(4) + omp_get_wtime() - tq1
     
         do k=1,(n_tor+1)/2
+          if (pair_skip(k)) cycle
           ik      = max(2*(k-1),1)
           index_k = n_tor*(i-1) + max(2*(k-1),1)
 
           do m=1,(n_tor+1)/2
+            if (pair_skip(m)) cycle
             index_m = n_tor*(j-1) + max(2*(m-1),1)
             l = (k-1) + (m-1)
 
@@ -876,23 +912,29 @@ if (use_fft) then
       end if
     end do
   end do
+!$ tl(7) = omp_get_wtime() - tq0
 
+!$ tq0 = omp_get_wtime()
   do i=1,n_vertex_max*n_var*(n_order+1)
     do j=1, n_vertex_max*n_var*(n_order+1)
       if (maxval(abs(ELM_kn(1:n_plane,i,j))) .ne. 0.d0) then
         in_fft =  ELM_kn(1:n_plane,i,j)
 
+!$      tq1 = omp_get_wtime()
 #ifdef USE_FFTW
         call dfftw_execute_dft_r2c(fftw_plan, in_fft, out_fft)
 #else
         call my_fft(in_fft, out_fft, n_plane)
 #endif
+!$      tl(4) = tl(4) + omp_get_wtime() - tq1
     
         do k=1,(n_tor+1)/2
+          if (pair_skip(k)) cycle
           ik      = max(2*(k-1),1)
           index_k = n_tor*(i-1) + max(2*(k-1),1)
 
           do m=1,(n_tor+1)/2
+            if (pair_skip(m)) cycle
             im      = max(2*(m-1),1)
             index_m = n_tor*(j-1) + max(2*(m-1),1)
             l = (k-1) + (m-1)
@@ -927,22 +969,29 @@ if (use_fft) then
       end if
     end do
   end do
+!$ tl(8) = omp_get_wtime() - tq0
 
+!$ tq0 = omp_get_wtime()
   ELM = 0.5d0 * ELM
+!$ tl(1) = tl(1) + omp_get_wtime() - tq0
 
+!$ tq0 = omp_get_wtime()
   do j=1, n_vertex_max*n_var*(n_order+1)
     in_fft = RHS_p(1:n_plane,j)
 
+!$  tq1 = omp_get_wtime()
 #ifdef USE_FFTW
     call dfftw_execute_dft_r2c(fftw_plan, in_fft, out_fft)
 #else
     call my_fft(in_fft, out_fft, n_plane)
 #endif
+!$  tl(4) = tl(4) + omp_get_wtime() - tq1
   
     index = n_tor*(j-1) + 1
-    RHS(index) = real(out_fft(1))
+    if (.not. pair_skip(1)) RHS(index) = real(out_fft(1))
 
     do k=2,(n_tor+1)/2
+      if (pair_skip(k)) cycle
       index = n_tor*(j-1) + 2*(k-1)
       RHS(index)   =   real(out_fft(k))
       RHS(index+1) = - imag(out_fft(k))
@@ -952,26 +1001,33 @@ if (use_fft) then
   do j=1, n_vertex_max*n_var*(n_order+1)
     in_fft = RHS_k(1:n_plane,j)
 
+!$  tq1 = omp_get_wtime()
 #ifdef USE_FFTW
     call dfftw_execute_dft_r2c(fftw_plan, in_fft, out_fft)
 #else
     call my_fft(in_fft, out_fft, n_plane)
 #endif
+!$  tl(4) = tl(4) + omp_get_wtime() - tq1
 
     index = n_tor*(j-1) + 1
     ik    = 1
-    RHS(index) = RHS(index) + imag(out_fft(1)) * float(mode(ik))
+    if (.not. pair_skip(1)) RHS(index) = RHS(index) + imag(out_fft(1)) * float(mode(ik))
 
     do k=2,(n_tor+1)/2
+      if (pair_skip(k)) cycle
       ik    = max(2*(k-1),1)
       index = n_tor*(j-1) + 2*(k-1)
       RHS(index)   = RHS(index)   + imag(out_fft(k)) * float(mode(ik))
       RHS(index+1) = RHS(index+1) + real(out_fft(k)) * float(mode(ik))
     end do
   end do
+!$ tl(9) = omp_get_wtime() - tq0
 else
+  if (associated(thread_struct)) thread_struct(tid)%tm(1:3) = thread_struct(tid)%tm(1:3) + tl(1:3)
   return
 end if
+
+if (associated(thread_struct)) thread_struct(tid)%tm(1:9) = thread_struct(tid)%tm(1:9) + tl(1:9)
 
 return
 end subroutine element_matrix_fft
