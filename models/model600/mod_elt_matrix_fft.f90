@@ -100,6 +100,7 @@ real*8     :: P0,  P0_s,  P0_t,  P0_x,  P0_y,  P0_p, P0_ss, P0_st, P0_tt, P0_xx,
 real*8     :: Pi0, Pi0_s, Pi0_t, Pi0_x, Pi0_y, Pi0_p, Pi0_ss, Pi0_st, Pi0_tt, Pi0_xx, Pi0_xy, Pi0_yy
 real*8     :: Pi0_x_rho, Pi0_xx_rho, Pi0_y_rho, Pi0_yy_rho, Pi0_xy_rho
 real*8     :: Pi0_x_Ti,  Pi0_xx_Ti,  Pi0_y_Ti,  Pi0_yy_Ti,  Pi0_xy_Ti
+real*8, parameter :: fact_resid_gv = 0.d0   ! 021/014 test (2026-11-10): 0 switches off the gyroviscous residual stress terms; 1 = stock
 real*8     :: Pe0, Pe0_s, Pe0_t, Pe0_x, Pe0_y, Pe0_p, Pe0_ss, Pe0_st, Pe0_tt, Pe0_xx, Pe0_xy, Pe0_yy
 real*8     :: Vpar0, Vpar0_s, Vpar0_t, Vpar0_p, Vpar0_x, Vpar0_y, Vpar0_ss, Vpar0_st, Vpar0_tt, Vpar0_xx, Vpar0_yy,Vpar0_xy
 real*8     :: BigR_x, vv2, eta_T, visco_T, deta_dT, d2eta_d2T, dvisco_dT, d2visco_dT2, visco_num_T, eta_num_T, W_dia, W_dia_rho, W_dia_Ti
@@ -1587,9 +1588,9 @@ do i=1,n_vertex_max
             !===============================End of NewTG_num terms==============================
                          - v * tauIC*2. * BigR**4 * (Pi0_s * w0_t - Pi0_t * w0_s)                                  * tstep * factor(var_u,7) &
 
-                         - tauIC*2. * BigR**3 * Pi0_y * (v_x* u0_x + v_y * u0_y)                            * xjac * tstep * factor(var_u,7) &
+                         - fact_resid_gv * tauIC*2. * BigR**3 * Pi0_y * (v_x* u0_x + v_y * u0_y)                            * xjac * tstep * factor(var_u,7) &
 
-                         - v * tauIC*2. * BigR**4 * (u0_xy * (Pi0_xx - Pi0_yy) - Pi0_xy * (u0_xx - u0_yy) ) * xjac * tstep * factor(var_u,7) &
+                         - fact_resid_gv * v * tauIC*2. * BigR**4 * (u0_xy * (Pi0_xx - Pi0_yy) - Pi0_xy * (u0_xx - u0_yy) ) * xjac * tstep * factor(var_u,7) &
 
                          ! --- Diamagnetic viscosity
                          + dvisco_dT * bigR * W_dia * (v_x*Ti0_x + v_y*Ti0_y)                               * xjac * tstep * factor(var_u,8) &
@@ -2474,9 +2475,9 @@ do i=1,n_vertex_max
                                     + r0_hat * BigR**2 * w0 * (v_s * u_t  - v_t  * u_s)                                   * theta * tstep &
                                     + BigR**2 * (u_x * u0_x + u_y * u0_y) * (v_x * r0_y_hat - v_y * r0_x_hat)      * xjac * theta * tstep &
 
-                                    + tauIC*2. * BigR**3 * Pi0_y * (v_x* u_x + v_y * u_y)                          * xjac * theta * tstep &
+                                    + fact_resid_gv * tauIC*2. * BigR**3 * Pi0_y * (v_x* u_x + v_y * u_y)                          * xjac * theta * tstep &
 
-                                    + v * tauIC*2. * BigR**4 * (u_xy * (Pi0_xx - Pi0_yy) - Pi0_xy * (u_xx - u_yy)) * xjac * theta * tstep &
+                                    + fact_resid_gv * v * tauIC*2. * BigR**4 * (u_xy * (Pi0_xx - Pi0_yy) - Pi0_xy * (u_xx - u_yy)) * xjac * theta * tstep &
 
                                     ! New terms coming from -(\partial_t \rho + \nabla \cdot (\rho \mathbf{v})) \mathbf{v} in RHS of momentum equation
                                     ! (see wiki: https://www.jorek.eu/wiki/doku.php?id=model500_501_555#equations):
@@ -2555,8 +2556,8 @@ do i=1,n_vertex_max
 
                                       + v * tauIC*2. * BigR**4 * Ti0  * (rho_s * w0_t - rho_t * w0_s)                      * theta * tstep &
                                       + v * tauIC*2. * BigR**4 * rho * (Ti0_s  * w0_t - Ti0_t  * w0_s)                     * theta * tstep &
-                                      + tauIC*2. * BigR**3 * (Ti0_y * rho + Ti0 * rho_y) * (v_x* u0_x + v_y * u0_y) * xjac * theta * tstep &
-                                      + v * tauIC*2. * BigR**4 * ( (u0_xy * (rho_xx*Ti0 + 2.d0*rho_x*Ti0_x + rho*Ti0_xx                    &
+                                      + fact_resid_gv * tauIC*2. * BigR**3 * (Ti0_y * rho + Ti0 * rho_y) * (v_x* u0_x + v_y * u0_y) * xjac * theta * tstep &
+                                      + fact_resid_gv * v * tauIC*2. * BigR**4 * ( (u0_xy * (rho_xx*Ti0 + 2.d0*rho_x*Ti0_x + rho*Ti0_xx                    &
                                             -  rho_yy*Ti0 - 2.d0*rho_y*Ti0_y - rho*Ti0_yy))                                                &
                                             - (rho_xy*Ti0 + rho_x*Ti0_y + rho_y*Ti0_x + rho*Ti0_xy) * (u0_xx - u0_yy)  ) * xjac * theta * tstep&
                                       ! --- Diamagnetic viscosity
@@ -2595,8 +2596,8 @@ do i=1,n_vertex_max
 
                                        + v * tauIC*2. * BigR**4 * r0 * (Ti_s * w0_t - Ti_t * w0_s)                      * theta * tstep &
                                        + v * tauIC*2. * BigR**4 * Ti  * (r0_s * w0_t - r0_t * w0_s)                     * theta * tstep &
-                                       + tauIC*2. * BigR**3 * (r0_y * Ti + r0 * Ti_y) * (v_x* u0_x + v_y * u0_y) * xjac * theta * tstep &
-                                       + v * tauIC*2. * BigR**4 * ( (u0_xy * (Ti_xx*r0 + 2.d0*Ti_x*r0_x + Ti*r0_xx                      &
+                                       + fact_resid_gv * tauIC*2. * BigR**3 * (r0_y * Ti + r0 * Ti_y) * (v_x* u0_x + v_y * u0_y) * xjac * theta * tstep &
+                                       + fact_resid_gv * v * tauIC*2. * BigR**4 * ( (u0_xy * (Ti_xx*r0 + 2.d0*Ti_x*r0_x + Ti*r0_xx                      &
                                                                          - Ti_yy*r0 - 2.d0*Ti_y*r0_y - Ti*r0_yy))                    &
                                                                - (Ti_xy * r0 + Ti_x*r0_y + Ti_y*r0_x + Ti*r0_xy) * (u0_xx - u0_yy))  &
                                                              * xjac * theta * tstep                                                  &
@@ -2639,8 +2640,8 @@ do i=1,n_vertex_max
 
                               + v * tauIC * BigR**4 * r0 * (T_s  * w0_t - T_t  * w0_s)                      * theta * tstep &
                               + v * tauIC * BigR**4 * T  * (r0_s * w0_t - r0_t * w0_s)                     * theta * tstep &
-                              + tauIC * BigR**3 * (r0_y * T + r0 * T_y) * (v_x* u0_x + v_y * u0_y) * xjac * theta * tstep &
-                              + v * tauIC * BigR**4 * ( (u0_xy * (T_xx*r0 + 2.d0*T_x*r0_x + T*r0_xx                      &
+                              + fact_resid_gv * tauIC * BigR**3 * (r0_y * T + r0 * T_y) * (v_x* u0_x + v_y * u0_y) * xjac * theta * tstep &
+                              + fact_resid_gv * v * tauIC * BigR**4 * ( (u0_xy * (T_xx*r0 + 2.d0*T_x*r0_x + T*r0_xx                      &
                                                                 - T_yy*r0 - 2.d0*T_y*r0_y - T*r0_yy))                    &
                                                       - (T_xy * r0 + T_x*r0_y + T_y*r0_x + T*r0_xy) * (u0_xx - u0_yy))  &
                                                     * xjac * theta * tstep                                                  &
