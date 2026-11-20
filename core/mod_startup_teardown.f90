@@ -111,7 +111,7 @@ end subroutine initialise
 !> Verify that we are not doing stupid things. Run this after loading parameters
 !> from the input file.
 subroutine sanity_checks(my_id, n_cpu, mpi_required, mpi_provided)
-  use mod_parameters, only: n_tor, n_plane
+  use mod_parameters, only: n_tor, n_plane, n_period, n_coord_period
   use phys_module
   use gauss
 
@@ -301,6 +301,13 @@ subroutine sanity_checks(my_id, n_cpu, mpi_required, mpi_provided)
     write(*,*) ' FATAL: n_plane >= 2 * (n_tor-1) required to avoid aliasing.'
     call MPI_Abort(MPI_COMM_WORLD, 4, ierr)
     stop
+  else if ( mod(n_period*n_plane, n_coord_period) /= 0 ) then
+    ! The toroidal integrals are sums over n_period*n_plane equally spaced planes. Unless n_coord_period divides
+    ! that number, aliasing couples toroidal harmonics of different field-period mode families.
+    write(*,*) ' FATAL: n_coord_period must divide n_period*n_plane, otherwise plane aliasing couples'
+    write(*,*) '        the field-period mode families.', n_coord_period, n_period, n_plane
+    call MPI_Abort(MPI_COMM_WORLD, 4, ierr)
+    stop
 #ifndef USE_FFTW
   else if ( ( n_tor >= n_tor_fft_thresh ) .and. ( iand(n_plane,n_plane-1) /= 0 ) ) then
     write(*,*) ' FATAL: If n_tor >= n_tor_fft_thresh, n_plane must be a power of 2.'
@@ -328,6 +335,12 @@ subroutine sanity_checks(my_id, n_cpu, mpi_required, mpi_provided)
     write(*,*) 'WARNING: n_plane is not a power of two. This might be inefficient.'
     write(*,*) '  When using FFTW, it is possible to run like this, but it might not be fast.'
   end if
+  ! The simulated wedge 2*pi/n_period must hold a whole number of field periods for a 3D geometry to close on it.
+  if ( (n_coord_tor > 1) .and. (mod(n_coord_period, n_period) /= 0) .and. (my_id .eq. 0) ) then
+    write(*,*) 'WARNING: n_period does not divide n_coord_period, so the geometry does not close on the simulated'
+    write(*,*) '  wedge, and the field-period mode families are not separate.', n_period, n_coord_period
+  end if
+  if ( linear_run .and. (jorek_model == 183) ) call setup_linear_family(my_id)
   if ( (nbthreads > 24) .and. (my_id == 0)  .and. (my_id .eq. 0)) then
     write(*,*) 'WARNING: You are using more than 24 OpenMP threads which might be inefficient.'
     write(*,*) '  Consider testing, whether you get better performance by increasing the number'
@@ -392,6 +405,53 @@ subroutine sanity_checks(my_id, n_cpu, mpi_required, mpi_provided)
   endif
   
 end subroutine sanity_checks
+
+!> Linear run by toroidal mode family (model 183): pick the harmonics that evolve and freeze all the others.
+!> With a 3D geometry the family is n = +-linear_family (mod n_coord_period). With axisymmetric geometry every n is its
+!> own family, so only n = linear_family evolves. Runs on every rank, after det_modes and the parameter broadcast.
+subroutine setup_linear_family(my_id)
+  use mod_parameters, only: n_tor, n_period, n_coord_tor, n_coord_period
+  use phys_module,    only: mode, linear_family, harmonic_frozen, freeze_harmonics
+
+  integer, intent(in) :: my_id
+  integer :: i, ierr, a
+  logical :: axisymmetric, first_of_n(n_tor)
+
+  a = linear_family
+  axisymmetric = (n_coord_tor == 1)
+
+  if ( (a < 1) .or. ((.not. axisymmetric) .and. (2*a > n_coord_period)) ) then
+    if ( my_id == 0 ) then
+      write(*,*) ' FATAL: linear_family out of range. Need 1 <= linear_family <= n_coord_period/2, or'
+      write(*,*) '        linear_family >= 1 with axisymmetric geometry.', a, n_coord_period, n_coord_tor
+    end if
+    call MPI_Abort(MPI_COMM_WORLD, 6, ierr)
+    stop
+  end if
+
+  do i = 1, n_tor
+    first_of_n(i) = (i == 1) .or. (mod(i,2) == 0)
+    if ( axisymmetric ) then
+      harmonic_frozen(i) = (mode(i) /= a)
+    else
+      harmonic_frozen(i) = (mod(mode(i)-a, n_coord_period) /= 0) .and. (mod(mode(i)+a, n_coord_period) /= 0)
+    end if
+  end do
+
+  if ( all(harmonic_frozen) ) then
+    if ( my_id == 0 ) write(*,*) ' FATAL: the run holds no harmonic of linear_family.', a, n_period, n_tor
+    call MPI_Abort(MPI_COMM_WORLD, 6, ierr)
+    stop
+  end if
+
+  freeze_harmonics = .true.
+
+  if ( my_id == 0 ) then
+    write(*,'(A,I0)') ' linear_run: mode family ', a
+    write(*,'(A,*(1X,I0))') ' linear_run: evolving n =', pack(mode, first_of_n .and. (.not. harmonic_frozen))
+    write(*,'(A,*(1X,I0))') ' linear_run: frozen n   =', pack(mode, first_of_n .and. harmonic_frozen)
+  end if
+end subroutine setup_linear_family
 
 
 subroutine finalize(my_id)

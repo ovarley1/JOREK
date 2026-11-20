@@ -4,10 +4,11 @@ subroutine update_values(element_list, node_list, rhs_vec)
 !-----------------------------------------------------------------------
 
 use data_structure, only: type_element_list, type_node_list, type_RHS
-use phys_module, only: keep_n0_const, treat_axis
+use phys_module, only: keep_n0_const, treat_axis, freeze_harmonics, harmonic_frozen
 use mod_parameters, only: n_tor, n_var, n_degrees, n_vertex_max
 use mod_basisfunctions
 use mod_axis_treatment
+use mpi_mod
 
 implicit none
 
@@ -28,9 +29,39 @@ integer :: index_elm,l,i_tor,ivar
 integer :: i, j, k, in, index_node, index, i_tor_min
 integer :: id
 real*8  :: stored_dofs(1:n_degrees*n_var*n_tor), new_dofs(1:4), old_dofs(1:4)
+real*8  :: max_frozen, max_evolving
+integer :: my_id, ierr
 
 i_tor_min = 1
 if ( keep_n0_const ) i_tor_min = 2 ! Keep equilibrium unchanged during the run
+
+! --- Linear run by mode family: drop the increments of the frozen harmonics, so that their values stay exactly unchanged
+! --- and zero is stored in deltas. The 1.d15 in the matrix keeps them near zero inside the solve, and this step would
+! --- hide a failure of that, so print them: they should be about 1e-15 of what the same harmonics do in an unfrozen run.
+if ( freeze_harmonics ) then
+  max_frozen   = 0.d0
+  max_evolving = 0.d0
+  do i = 1, node_list%n_nodes
+    if ( node_list%node(i)%constrained ) cycle
+    do j = 1, n_degrees
+      index_node = node_list%node(i)%index(j)
+      do k = 1, n_var
+        do in = 1, n_tor
+          index = n_tor*n_var * (index_node - 1) + n_tor*(k-1) + in
+          if ( index .le. 0 ) cycle
+          if ( harmonic_frozen(in) ) then
+            max_frozen = max(max_frozen, abs(rhs_vec%val(index)))
+            rhs_vec%val(index) = 0.d0
+          else
+            max_evolving = max(max_evolving, abs(rhs_vec%val(index)))
+          endif
+        enddo
+      enddo
+    enddo
+  enddo
+  call MPI_COMM_RANK(MPI_COMM_WORLD, my_id, ierr)
+  if ( my_id == 0 ) write(*,'(A,2ES12.4)') ' linear_run: max |increment| frozen, evolving =', max_frozen, max_evolving
+endif
 
 do i = 1, node_list%n_nodes
   if((.not. node_list%node(i)%constrained) ) then
