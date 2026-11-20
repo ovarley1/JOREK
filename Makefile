@@ -124,6 +124,11 @@ printsettings:
 	@echo "INCLUDES  = $(INCLUDES)"
 	@echo "LIBS      = $(LIBS)"
 
+# algexpr2fort (code generator, runs once at build time) segfaults when built with -O2 under ifx.
+# Lower the optimisation level only for the objects it is made of. EXTRA_FLAGS comes last on the
+# compile line, so this overrides -O2. Does not affect the JOREK executables' hot paths.
+$(OBJDIR)/algexpr2fort.o $(OBJDIR)/mod_semianalytical.o $(OBJDIR)/mod_equations.o: EXTRA_FLAGS += -O1
+
 $(OBJDIR)/mod_elt_matrix.o $(MODDIR)/mod_elt_matrix.mod: $(CGDEP)
 $(OBJDIR)/mod_elt_matrix_fft.o $(MODDIR)/mod_elt_matrix_fft.mod: $(CGDEP)
 
