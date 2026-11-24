@@ -407,8 +407,9 @@ subroutine sanity_checks(my_id, n_cpu, mpi_required, mpi_provided)
 end subroutine sanity_checks
 
 !> Linear run by toroidal mode family (model 183): pick the harmonics that evolve and freeze all the others.
-!> With a 3D geometry the family is n = +-linear_family (mod n_coord_period). With axisymmetric geometry every n is its
-!> own family, so only n = linear_family evolves. Runs on every rank, after det_modes and the parameter broadcast.
+!> With a 3D geometry the family is n = +-linear_family (mod n_coord_period). With axisymmetric geometry (a tokamak) only
+!> n = 0 is frozen and every n /= 0 evolves, as keep_n0_const does in the tokamak models; linear_family is not used.
+!> Runs on every rank, after det_modes and the parameter broadcast.
 subroutine setup_linear_family(my_id)
   use mod_parameters, only: n_tor, n_period, n_coord_tor, n_coord_period
   use phys_module,    only: mode, linear_family, harmonic_frozen, freeze_harmonics
@@ -420,10 +421,9 @@ subroutine setup_linear_family(my_id)
   a = linear_family
   axisymmetric = (n_coord_tor == 1)
 
-  if ( (a < 1) .or. ((.not. axisymmetric) .and. (2*a > n_coord_period)) ) then
+  if ( (.not. axisymmetric) .and. ((a < 1) .or. (2*a > n_coord_period)) ) then
     if ( my_id == 0 ) then
-      write(*,*) ' FATAL: linear_family out of range. Need 1 <= linear_family <= n_coord_period/2, or'
-      write(*,*) '        linear_family >= 1 with axisymmetric geometry.', a, n_coord_period, n_coord_tor
+      write(*,*) ' FATAL: linear_family out of range. Need 1 <= linear_family <= n_coord_period/2.', a, n_coord_period
     end if
     call MPI_Abort(MPI_COMM_WORLD, 6, ierr)
     stop
@@ -432,14 +432,14 @@ subroutine setup_linear_family(my_id)
   do i = 1, n_tor
     first_of_n(i) = (i == 1) .or. (mod(i,2) == 0)
     if ( axisymmetric ) then
-      harmonic_frozen(i) = (mode(i) /= a)
+      harmonic_frozen(i) = (mode(i) == 0)
     else
       harmonic_frozen(i) = (mod(mode(i)-a, n_coord_period) /= 0) .and. (mod(mode(i)+a, n_coord_period) /= 0)
     end if
   end do
 
   if ( all(harmonic_frozen) ) then
-    if ( my_id == 0 ) write(*,*) ' FATAL: the run holds no harmonic of linear_family.', a, n_period, n_tor
+    if ( my_id == 0 ) write(*,*) ' FATAL: the run holds no harmonic to evolve.', a, n_period, n_tor, n_coord_tor
     call MPI_Abort(MPI_COMM_WORLD, 6, ierr)
     stop
   end if
@@ -447,7 +447,11 @@ subroutine setup_linear_family(my_id)
   freeze_harmonics = .true.
 
   if ( my_id == 0 ) then
-    write(*,'(A,I0)') ' linear_run: mode family ', a
+    if ( axisymmetric ) then
+      write(*,'(A)') ' linear_run: axisymmetric geometry, only n = 0 frozen (linear_family not used)'
+    else
+      write(*,'(A,I0)') ' linear_run: mode family ', a
+    end if
     write(*,'(A,*(1X,I0))') ' linear_run: evolving n =', pack(mode, first_of_n .and. (.not. harmonic_frozen))
     write(*,'(A,*(1X,I0))') ' linear_run: frozen n   =', pack(mode, first_of_n .and. harmonic_frozen)
   end if

@@ -126,7 +126,7 @@ module phys_module
   integer :: gmres_max_iter       !< Maximum number of GMRES iterations
   logical :: keep_n0_const        !< Perform a linear run where the equilibrium quantities (i_tor=1) do not change with time?
   logical :: linear_run           !< Same as keep_n0_const, to be replaced soon by true linear run where modes are independent. In model 183: linear run by mode family, see linear_family
-  integer :: linear_family        !< Model 183 with linear_run: the mode family that evolves, n = +-linear_family (mod n_coord_period). Every other harmonic is frozen. With axisymmetric geometry (n_coord_tor=1) only n = linear_family evolves
+  integer :: linear_family        !< Model 183 with linear_run: the mode family that evolves, n = +-linear_family (mod n_coord_period). Every other harmonic is frozen. With axisymmetric geometry (n_coord_tor=1) it is not used: only n = 0 is frozen
   logical :: freeze_harmonics = .false.        !< Linear run by mode family is active. Set at startup on every rank, not an input
   logical :: harmonic_frozen(n_tor) = .false.  !< Harmonics i_tor held fixed in a linear run by mode family. Set at startup on every rank, not an input
   logical :: export_for_nemec     !< Export equilibrium information for the NEMEC code?
